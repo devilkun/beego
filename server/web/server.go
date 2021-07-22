@@ -32,18 +32,15 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"github.com/beego/beego/v2/core/logs"
-	beecontext "github.com/beego/beego/v2/server/web/context"
-
 	"github.com/beego/beego/v2/core/utils"
+	beecontext "github.com/beego/beego/v2/server/web/context"
 	"github.com/beego/beego/v2/server/web/grace"
 )
 
-var (
-	// BeeApp is an application instance
-	// If you are using single server, you could use this
-	// But if you need multiple servers, do not use this
-	BeeApp *HttpServer
-)
+// BeeApp is an application instance
+// If you are using single server, you could use this
+// But if you need multiple servers, do not use this
+var BeeApp *HttpServer
 
 func init() {
 	// create beego application
@@ -81,7 +78,6 @@ type MiddleWare func(http.Handler) http.Handler
 
 // Run beego application.
 func (app *HttpServer) Run(addr string, mws ...MiddleWare) {
-
 	initBeforeHTTPRun()
 
 	// init...
@@ -235,7 +231,6 @@ func (app *HttpServer) Run(addr string, mws ...MiddleWare) {
 				endRunning <- true
 			}
 		}()
-
 	}
 	if app.Cfg.Listen.EnableHTTP {
 		go func() {
@@ -442,7 +437,7 @@ func AutoRouter(c ControllerInterface) *HttpServer {
 
 // AutoRouter adds defined controller handler to BeeApp.
 // it's same to HttpServer.AutoRouter.
-// if beego.AddAuto(&MainContorlller{}) and MainController has methods List and Page,
+// if beego.AddAuto(&MainController{}) and MainController has methods List and Page,
 // visit the url /main/list to exec List function or /main/page to exec Page function.
 func (app *HttpServer) AutoRouter(c ControllerInterface) *HttpServer {
 	app.Handlers.AddAuto(c)
@@ -456,7 +451,7 @@ func AutoPrefix(prefix string, c ControllerInterface) *HttpServer {
 
 // AutoPrefix adds controller handler to BeeApp with prefix.
 // it's same to HttpServer.AutoRouterWithPrefix.
-// if beego.AutoPrefix("/admin",&MainContorlller{}) and MainController has methods List and Page,
+// if beego.AutoPrefix("/admin",&MainController{}) and MainController has methods List and Page,
 // visit the url /admin/main/list to exec List function or /admin/main/page to exec Page function.
 func (app *HttpServer) AutoPrefix(prefix string, c ControllerInterface) *HttpServer {
 	app.Handlers.AddAutoPrefix(prefix, c)
@@ -865,21 +860,21 @@ func printTree(resultList *[][]string, t *Tree) {
 	for _, l := range t.leaves {
 		if v, ok := l.runObject.(*ControllerInfo); ok {
 			if v.routerType == routerTypeBeego {
-				var result = []string{
+				result := []string{
 					template.HTMLEscapeString(v.pattern),
 					template.HTMLEscapeString(fmt.Sprintf("%s", v.methods)),
 					template.HTMLEscapeString(v.controllerType.String()),
 				}
 				*resultList = append(*resultList, result)
 			} else if v.routerType == routerTypeRESTFul {
-				var result = []string{
+				result := []string{
 					template.HTMLEscapeString(v.pattern),
 					template.HTMLEscapeString(fmt.Sprintf("%s", v.methods)),
 					"",
 				}
 				*resultList = append(*resultList, result)
 			} else if v.routerType == routerTypeHandler {
-				var result = []string{
+				result := []string{
 					template.HTMLEscapeString(v.pattern),
 					"",
 					"",
@@ -905,7 +900,7 @@ func (app *HttpServer) reportFilter() M {
 			if bf := app.Handlers.filters[k]; len(bf) > 0 {
 				resultList := new([][]string)
 				for _, f := range bf {
-					var result = []string{
+					result := []string{
 						// void xss
 						template.HTMLEscapeString(f.pattern),
 						template.HTMLEscapeString(utils.GetFuncName(f.filterFunc)),
