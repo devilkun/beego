@@ -16,14 +16,12 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
 )
 
 func TestIni(t *testing.T) {
-
 	var (
 		inicontext = `
 ;comment one
@@ -129,11 +127,9 @@ password = ${GOPATH}
 	if res != "astaxie" {
 		t.Fatal("get name error")
 	}
-
 }
 
 func TestIniSave(t *testing.T) {
-
 	const (
 		inicontext = `
 app = app
@@ -176,7 +172,7 @@ name=mysql
 	}
 	defer os.Remove(name)
 
-	if data, err := ioutil.ReadFile(name); err != nil {
+	if data, err := os.ReadFile(name); err != nil {
 		t.Fatal(err)
 	} else {
 		cfgData := string(data)

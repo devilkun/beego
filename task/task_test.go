@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -146,7 +147,7 @@ func TestTask_Run(t *testing.T) {
 	task := func(ctx context.Context) error {
 		cnt++
 		fmt.Printf("Hello, world! %d \n", cnt)
-		return errors.New(fmt.Sprintf("Hello, world! %d", cnt))
+		return fmt.Errorf("Hello, world! %d", cnt)
 	}
 	tk := NewTask("taska", "0/30 * * * * *", task)
 	for i := 0; i < 200; i++ {
@@ -177,6 +178,26 @@ func TestCrudTask(t *testing.T) {
 	assert.Equal(t, 0, len(m.adminTaskList))
 }
 
+func TestGracefulShutdown(t *testing.T) {
+	m := newTaskManager()
+	defer m.ClearTask()
+	waitDone := atomic.Value{}
+	waitDone.Store(false)
+	tk := NewTask("everySecond", "* * * * * *", func(ctx context.Context) error {
+		fmt.Println("hello world")
+		time.Sleep(2 * time.Second)
+		waitDone.Store(true)
+		return nil
+	})
+	m.AddTask("taska", tk)
+	m.StartTask()
+	time.Sleep(1 * time.Second)
+	shutdown := m.GracefulShutdown()
+	assert.False(t, waitDone.Load().(bool))
+	<-shutdown
+	assert.True(t, waitDone.Load().(bool))
+}
+
 func wait(wg *sync.WaitGroup) chan bool {
 	ch := make(chan bool)
 	go func() {
@@ -184,4 +205,25 @@ func wait(wg *sync.WaitGroup) chan bool {
 		ch <- true
 	}()
 	return ch
+}
+
+func TestGetAllTasks(t *testing.T) {
+	m := newTaskManager()
+	defer m.ClearTask()
+
+	tk := NewTask("task1", "0/30 * * * * *", func(ctx context.Context) error {
+		return nil
+	})
+
+	tk2 := NewTask("task2", "0/40 * * * * *", func(ctx context.Context) error {
+		return nil
+	})
+
+	m.AddTask("task1", tk)
+	m.AddTask("task2", tk2)
+
+	tasks := m.GetAllTasks()
+	total := len(tasks)
+
+	assert.Equal(t, 2, total)
 }

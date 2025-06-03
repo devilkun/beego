@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 
 	"github.com/beego/beego/v2/core/logs"
 )
@@ -110,7 +109,7 @@ func (c *aliLSWriter) Init(config string) error {
 	if len(c.Formatter) > 0 {
 		fmtr, ok := logs.GetFormatter(c.Formatter)
 		if !ok {
-			return errors.New(fmt.Sprintf("the formatter with name: %s not found", c.Formatter))
+			return fmt.Errorf("the formatter with name: %s not found", c.Formatter)
 		}
 		c.formatter = fmtr
 	}
@@ -180,7 +179,6 @@ func (c *aliLSWriter) WriteMsg(lm *logs.LogMsg) error {
 
 // Flush implementing method. empty.
 func (c *aliLSWriter) Flush() {
-
 	// flush all group
 	for _, lg := range c.group {
 		c.flush(lg)
@@ -192,7 +190,6 @@ func (c *aliLSWriter) Destroy() {
 }
 
 func (c *aliLSWriter) flush(lg *LogGroup) {
-
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	err := c.store.PutLogs(lg)

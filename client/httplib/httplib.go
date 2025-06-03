@@ -17,7 +17,7 @@
 //
 // import "github.com/beego/beego/v2/client/httplib"
 //
-//	b := httplib.Post("http://beego.me/")
+//	b := httplib.Post("http://beego.vip/")
 //	b.Param("username","astaxie")
 //	b.Param("password","123456")
 //	b.PostFile("uploadfile1", "httplib.pdf")
@@ -27,8 +27,6 @@
 //		t.Fatal(err)
 //	}
 //	fmt.Println(str)
-//
-//  more docs http://beego.me/docs/module/httplib.md
 package httplib
 
 import (
@@ -39,23 +37,23 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/beego/beego/v2/core/berror"
 	"github.com/beego/beego/v2/core/logs"
 )
 
 const contentTypeKey = "Content-Type"
+
 // it will be the last filter and execute request.Do
 var doRequestFilter = func(ctx context.Context, req *BeegoHTTPRequest) (*http.Response, error) {
 	return req.doRequest(ctx)
@@ -66,26 +64,25 @@ var doRequestFilter = func(ctx context.Context, req *BeegoHTTPRequest) (*http.Re
 // I think if we don't return error
 // users are hard to check whether we create Beego request successfully
 func NewBeegoRequest(rawurl, method string) *BeegoHTTPRequest {
-	var resp http.Response
-	u, err := url.Parse(rawurl)
+	return NewBeegoRequestWithCtx(context.Background(), rawurl, method)
+}
+
+// NewBeegoRequestWithCtx returns a new BeegoHTTPRequest given a method, URL
+func NewBeegoRequestWithCtx(ctx context.Context, rawurl, method string) *BeegoHTTPRequest {
+	req, err := http.NewRequestWithContext(ctx, method, rawurl, nil)
 	if err != nil {
-		logs.Error("%+v", berror.Wrapf(err, InvalidUrl, "invalid raw url: %s", rawurl))
-	}
-	req := http.Request{
-		URL:        u,
-		Method:     method,
-		Header:     make(http.Header),
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
+		logs.Error("%+v", berror.Wrapf(err, InvalidURLOrMethod, "invalid raw url or method: %s %s", rawurl, method))
 	}
 	return &BeegoHTTPRequest{
 		url:     rawurl,
-		req:     &req,
+		req:     req,
 		params:  map[string][]string{},
 		files:   map[string]string{},
 		setting: defaultSetting,
-		resp:    &resp,
+		resp:    &http.Response{},
+		copyBody: func() io.ReadCloser {
+			return nil
+		},
 	}
 }
 
@@ -114,7 +111,7 @@ func Head(url string) *BeegoHTTPRequest {
 	return NewBeegoRequest(url, "HEAD")
 }
 
-// BeegoHTTPRequest provides more useful methods than http.Request for requesting a url.
+// BeegoHTTPRequest provides more useful methods than http.Request for requesting an url.
 type BeegoHTTPRequest struct {
 	url     string
 	req     *http.Request
@@ -122,8 +119,10 @@ type BeegoHTTPRequest struct {
 	files   map[string]string
 	setting BeegoHTTPSettings
 	resp    *http.Response
-	body    []byte
-	dump    []byte
+	// body the response body, not the request body
+	body []byte
+	// copyBody support retry strategy to avoid copy request body
+	copyBody func() io.ReadCloser
 }
 
 // GetRequest returns the request object
@@ -198,7 +197,7 @@ func (b *BeegoHTTPRequest) SetHost(host string) *BeegoHTTPRequest {
 // SetProtocolVersion sets the protocol version for incoming requests.
 // Client requests always use HTTP/1.1
 func (b *BeegoHTTPRequest) SetProtocolVersion(vers string) *BeegoHTTPRequest {
-	if len(vers) == 0 {
+	if vers == "" {
 		vers = "HTTP/1.1"
 	}
 
@@ -229,9 +228,9 @@ func (b *BeegoHTTPRequest) SetTransport(transport http.RoundTripper) *BeegoHTTPR
 // example:
 //
 //	func(req *http.Request) (*url.URL, error) {
-// 		u, _ := url.ParseRequestURI("http://127.0.0.1:8118")
-// 		return u, nil
-// 	}
+//		u, _ := url.ParseRequestURI("http://127.0.0.1:8118")
+//		return u, nil
+//	}
 func (b *BeegoHTTPRequest) SetProxy(proxy func(*http.Request) (*url.URL, error)) *BeegoHTTPRequest {
 	b.setting.Proxy = proxy
 	return b
@@ -258,6 +257,12 @@ func (b *BeegoHTTPRequest) AddFilters(fcs ...FilterChain) *BeegoHTTPRequest {
 	return b
 }
 
+// SetEscapeHTML is used to set the flag whether escape HTML special characters during processing
+func (b *BeegoHTTPRequest) SetEscapeHTML(isEscape bool) *BeegoHTTPRequest {
+	b.setting.EscapeHTML = isEscape
+	return b
+}
+
 // Param adds query param in to request.
 // params build query string as ?key1=value1&key2=value2...
 func (b *BeegoHTTPRequest) Param(key, value string) *BeegoHTTPRequest {
@@ -281,21 +286,24 @@ func (b *BeegoHTTPRequest) PostFile(formname, filename string) *BeegoHTTPRequest
 func (b *BeegoHTTPRequest) Body(data interface{}) *BeegoHTTPRequest {
 	switch t := data.(type) {
 	case string:
-		bf := bytes.NewBufferString(t)
-		b.req.Body = ioutil.NopCloser(bf)
-		b.req.GetBody = func() (io.ReadCloser, error) {
-			return ioutil.NopCloser(bf), nil
-		}
-		b.req.ContentLength = int64(len(t))
+		b.reqBody([]byte(t))
 	case []byte:
-		bf := bytes.NewBuffer(t)
-		b.req.Body = ioutil.NopCloser(bf)
-		b.req.GetBody = func() (io.ReadCloser, error) {
-			return ioutil.NopCloser(bf), nil
-		}
-		b.req.ContentLength = int64(len(t))
+		b.reqBody(t)
 	default:
 		logs.Error("%+v", berror.Errorf(UnsupportedBodyType, "unsupported body data type: %s", t))
+	}
+	return b
+}
+
+func (b *BeegoHTTPRequest) reqBody(data []byte) *BeegoHTTPRequest {
+	body := io.NopCloser(bytes.NewReader(data))
+	b.req.Body = body
+	b.req.GetBody = func() (io.ReadCloser, error) {
+		return body, nil
+	}
+	b.req.ContentLength = int64(len(data))
+	b.copyBody = func() io.ReadCloser {
+		return io.NopCloser(bytes.NewReader(data))
 	}
 	return b
 }
@@ -307,11 +315,7 @@ func (b *BeegoHTTPRequest) XMLBody(obj interface{}) (*BeegoHTTPRequest, error) {
 		if err != nil {
 			return b, berror.Wrap(err, InvalidXMLBody, "obj could not be converted to XML data")
 		}
-		b.req.Body = ioutil.NopCloser(bytes.NewReader(byts))
-		b.req.GetBody = func() (io.ReadCloser, error) {
-			return ioutil.NopCloser(bytes.NewReader(byts)), nil
-		}
-		b.req.ContentLength = int64(len(byts))
+		b.reqBody(byts)
 		b.req.Header.Set(contentTypeKey, "application/xml")
 	}
 	return b, nil
@@ -324,8 +328,7 @@ func (b *BeegoHTTPRequest) YAMLBody(obj interface{}) (*BeegoHTTPRequest, error) 
 		if err != nil {
 			return b, berror.Wrap(err, InvalidYAMLBody, "obj could not be converted to YAML data")
 		}
-		b.req.Body = ioutil.NopCloser(bytes.NewReader(byts))
-		b.req.ContentLength = int64(len(byts))
+		b.reqBody(byts)
 		b.req.Header.Set(contentTypeKey, "application/x+yaml")
 	}
 	return b, nil
@@ -334,15 +337,25 @@ func (b *BeegoHTTPRequest) YAMLBody(obj interface{}) (*BeegoHTTPRequest, error) 
 // JSONBody adds the request raw body encoded in JSON.
 func (b *BeegoHTTPRequest) JSONBody(obj interface{}) (*BeegoHTTPRequest, error) {
 	if b.req.Body == nil && obj != nil {
-		byts, err := json.Marshal(obj)
+		byts, err := b.JSONMarshal(obj)
 		if err != nil {
 			return b, berror.Wrap(err, InvalidJSONBody, "obj could not be converted to JSON body")
 		}
-		b.req.Body = ioutil.NopCloser(bytes.NewReader(byts))
-		b.req.ContentLength = int64(len(byts))
+		b.reqBody(byts)
 		b.req.Header.Set(contentTypeKey, "application/json")
 	}
 	return b, nil
+}
+
+func (b *BeegoHTTPRequest) JSONMarshal(obj interface{}) ([]byte, error) {
+	bf := bytes.NewBuffer([]byte{})
+	jsonEncoder := json.NewEncoder(bf)
+	jsonEncoder.SetEscapeHTML(b.setting.EscapeHTML)
+	err := jsonEncoder.Encode(obj)
+	if err != nil {
+		return nil, err
+	}
+	return bf.Bytes(), nil
 }
 
 func (b *BeegoHTTPRequest) buildURL(paramBody string) {
@@ -388,11 +401,11 @@ func (b *BeegoHTTPRequest) handleFiles() {
 		_ = pw.Close()
 	}()
 	b.Header(contentTypeKey, bodyWriter.FormDataContentType())
-	b.req.Body = ioutil.NopCloser(pr)
+	b.req.Body = io.NopCloser(pr)
 	b.Header("Transfer-Encoding", "chunked")
 }
 
-func (b *BeegoHTTPRequest) handleFileToBody(bodyWriter *multipart.Writer, formname string, filename string) {
+func (*BeegoHTTPRequest) handleFileToBody(bodyWriter *multipart.Writer, formname string, filename string) {
 	fileWriter, err := bodyWriter.CreateFormFile(formname, filename)
 	const errFmt = "Httplib: %+v"
 	if err != nil {
@@ -400,7 +413,6 @@ func (b *BeegoHTTPRequest) handleFileToBody(bodyWriter *multipart.Writer, formna
 			"could not create form file, formname: %s, filename: %s", formname, filename))
 	}
 	fh, err := os.Open(filename)
-
 	if err != nil {
 		logs.Error(errFmt, berror.Wrapf(err, ReadFileFailed, "could not open this file %s", filename))
 	}
@@ -429,9 +441,16 @@ func (b *BeegoHTTPRequest) getResponse() (*http.Response, error) {
 
 // DoRequest executes client.Do
 func (b *BeegoHTTPRequest) DoRequest() (resp *http.Response, err error) {
-	return b.DoRequestWithCtx(context.Background())
+	root := doRequestFilter
+	if len(b.setting.FilterChains) > 0 {
+		for i := len(b.setting.FilterChains) - 1; i >= 0; i-- {
+			root = b.setting.FilterChains[i](root)
+		}
+	}
+	return root(b.req.Context(), b)
 }
 
+// Deprecated: please use NewBeegoRequestWithContext
 func (b *BeegoHTTPRequest) DoRequestWithCtx(ctx context.Context) (resp *http.Response, err error) {
 	root := doRequestFilter
 	if len(b.setting.FilterChains) > 0 {
@@ -442,7 +461,7 @@ func (b *BeegoHTTPRequest) DoRequestWithCtx(ctx context.Context) (resp *http.Res
 	return root(ctx, b)
 }
 
-func (b *BeegoHTTPRequest) doRequest(ctx context.Context) (*http.Response, error) {
+func (b *BeegoHTTPRequest) doRequest(_ context.Context) (*http.Response, error) {
 	paramBody := b.buildParamBody()
 
 	b.buildURL(paramBody)
@@ -476,7 +495,7 @@ func (b *BeegoHTTPRequest) doRequest(ctx context.Context) (*http.Response, error
 func (b *BeegoHTTPRequest) sendRequest(client *http.Client) (resp *http.Response, err error) {
 	// retries default value is 0, it will run once.
 	// retries equal to -1, it will run forever until success
-	// retries is setted, it will retries fixed times.
+	// retries is set, it will retry fixed times.
 	// Sleeps for a 400ms between calls to reduce spam
 	for i := 0; b.setting.Retries == -1 || i <= b.setting.Retries; i++ {
 		resp, err = client.Do(b.req)
@@ -484,6 +503,7 @@ func (b *BeegoHTTPRequest) sendRequest(client *http.Client) (resp *http.Response
 			return
 		}
 		time.Sleep(b.setting.RetryDelay)
+		b.req.Body = b.copyBody()
 	}
 	return nil, berror.Wrap(err, SendRequestFailed, "sending request fail")
 }
@@ -510,18 +530,16 @@ func (b *BeegoHTTPRequest) buildTrans() http.RoundTripper {
 			DialContext:         TimeoutDialerCtx(b.setting.ConnectTimeout, b.setting.ReadWriteTimeout),
 			MaxIdleConnsPerHost: 100,
 		}
-	} else {
+	} else if t, ok := trans.(*http.Transport); ok {
 		// if b.transport is *http.Transport then set the settings.
-		if t, ok := trans.(*http.Transport); ok {
-			if t.TLSClientConfig == nil {
-				t.TLSClientConfig = b.setting.TLSClientConfig
-			}
-			if t.Proxy == nil {
-				t.Proxy = b.setting.Proxy
-			}
-			if t.DialContext == nil {
-				t.DialContext = TimeoutDialerCtx(b.setting.ConnectTimeout, b.setting.ReadWriteTimeout)
-			}
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = b.setting.TLSClientConfig
+		}
+		if t.Proxy == nil {
+			t.Proxy = b.setting.Proxy
+		}
+		if t.DialContext == nil {
+			t.DialContext = TimeoutDialerCtx(b.setting.ConnectTimeout, b.setting.ReadWriteTimeout)
 		}
 	}
 	return trans
@@ -575,10 +593,10 @@ func (b *BeegoHTTPRequest) Bytes() ([]byte, error) {
 		if err != nil {
 			return nil, berror.Wrap(err, ReadGzipBodyFailed, "building gzip reader failed")
 		}
-		b.body, err = ioutil.ReadAll(reader)
+		b.body, err = io.ReadAll(reader)
 		return b.body, berror.Wrap(err, ReadGzipBodyFailed, "reading gzip data failed")
 	}
-	b.body, err = ioutil.ReadAll(resp.Body)
+	b.body, err = io.ReadAll(resp.Body)
 	return b.body, err
 }
 
@@ -608,7 +626,7 @@ func (b *BeegoHTTPRequest) ToFile(filename string) error {
 
 // Check if the file directory exists. If it doesn't then it's created
 func pathExistAndMkdir(filename string) (err error) {
-	filename = path.Dir(filename)
+	filename = filepath.Dir(filename)
 	_, err = os.Stat(filename)
 	if err == nil {
 		return nil
@@ -653,6 +671,40 @@ func (b *BeegoHTTPRequest) ToYAML(v interface{}) error {
 	}
 	return berror.Wrap(yaml.Unmarshal(data, v),
 		UnmarshalYAMLResponseToObjectFailed, "unmarshal yaml body to object failed.")
+}
+
+// ToValue attempts to resolve the response body to value using an existing method.
+// Calls Response inner.
+// If response header contain Content-Type, func will call ToJSON\ToXML\ToYAML.
+// Else it will try to parse body as json\yaml\xml, If all attempts fail, an error will be returned
+func (b *BeegoHTTPRequest) ToValue(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+
+	contentType := strings.Split(b.resp.Header.Get(contentTypeKey), ";")[0]
+	// try to parse it as content type
+	switch contentType {
+	case "application/json":
+		return b.ToJSON(value)
+	case "text/xml", "application/xml":
+		return b.ToXML(value)
+	case "text/yaml", "application/x-yaml", "application/x+yaml":
+		return b.ToYAML(value)
+	}
+
+	// try to parse it anyway
+	if err := b.ToJSON(value); err == nil {
+		return nil
+	}
+	if err := b.ToYAML(value); err == nil {
+		return nil
+	}
+	if err := b.ToXML(value); err == nil {
+		return nil
+	}
+
+	return berror.Error(UnmarshalResponseToObjectFailed, "unmarshal body to object failed.")
 }
 
 // Response executes request client gets response manually.

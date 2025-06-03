@@ -37,6 +37,7 @@ type taskManager struct {
 	stop          chan bool
 	changed       chan bool
 	started       bool
+	wait          sync.WaitGroup
 }
 
 func newTaskManager() *taskManager {
@@ -136,7 +137,6 @@ type Task struct {
 
 // NewTask add new task with name, time and func
 func NewTask(tname string, spec string, f TaskFunc, opts ...Option) *Task {
-
 	task := &Task{
 		Taskname: tname,
 		DoFunc:   f,
@@ -221,7 +221,7 @@ func (f optionFunc) apply(t *Task) {
 	f(t)
 }
 
-// TimeoutOption return a option to set timeout duration for task
+// TimeoutOption return an option to set timeout duration for task
 func TimeoutOption(timeout time.Duration) Option {
 	return optionFunc(func(t *Task) {
 		t.Timeout = timeout
@@ -237,11 +237,16 @@ func TimeoutOption(timeout time.Duration) Option {
 //       week：0-6（0 means Sunday）
 
 // SetCron some signals：
-//       *： any time
-//       ,：　 separate signal
+//
+//	*： any time
+//	,：　 separate signal
+//
 // 　　    －：duration
-//       /n : do as n times of time duration
+//
+//	/n : do as n times of time duration
+//
 // ///////////////////////////////////////////////////////
+//
 //	0/30 * * * * *                        every 30s
 //	0 43 21 * * *                         21:43
 //	0 15 05 * * * 　　                     05:15
@@ -350,7 +355,6 @@ func (t *Task) parseSpec(spec string) *Schedule {
 
 // Next set schedule to next time
 func (s *Schedule) Next(t time.Time) time.Time {
-
 	// Start at the earliest possible time (the upcoming second).
 	t = t.Add(1*time.Second - time.Duration(t.Nanosecond())*time.Nanosecond)
 
@@ -466,9 +470,19 @@ func DeleteTask(taskName string) {
 	globalTaskManager.DeleteTask(taskName)
 }
 
-//  ClearTask clear all tasks
+// ClearTask clear all tasks
 func ClearTask() {
 	globalTaskManager.ClearTask()
+}
+
+// GetAllTasks get all tasks
+func GetAllTasks() []Tasker {
+	return globalTaskManager.GetAllTasks()
+}
+
+// GracefulShutdown wait all task done
+func GracefulShutdown() <-chan struct{} {
+	return globalTaskManager.GracefulShutdown()
 }
 
 // StartTask start all tasks
@@ -508,7 +522,7 @@ func (m *taskManager) run() {
 
 		select {
 		case now = <-time.After(effective.Sub(now)): // wait for effective time
-			runNextTasks(sortList, effective)
+			m.runNextTasks(sortList, effective)
 			continue
 		case <-m.changed: // tasks have been changed, set all tasks run again now
 			now = time.Now().Local()
@@ -540,9 +554,9 @@ func (m *taskManager) markManagerStop() {
 }
 
 // runNextTasks it runs next task which next run time is equal to effective
-func runNextTasks(sortList *MapSorter, effective time.Time) {
+func (m *taskManager) runNextTasks(sortList *MapSorter, effective time.Time) {
 	// Run every entry whose next time was this effective time.
-	var i = 0
+	i := 0
 	for _, e := range sortList.Vals {
 		i++
 		if e.GetNext(context.Background()) != effective {
@@ -551,8 +565,10 @@ func runNextTasks(sortList *MapSorter, effective time.Time) {
 
 		// check if timeout is on, if yes passing the timeout context
 		ctx := context.Background()
+		m.wait.Add(1)
 		if duration := e.GetTimeout(ctx); duration != 0 {
 			go func(e Tasker) {
+				defer m.wait.Done()
 				ctx, cancelFunc := context.WithTimeout(ctx, duration)
 				defer cancelFunc()
 				err := e.Run(ctx)
@@ -562,6 +578,7 @@ func runNextTasks(sortList *MapSorter, effective time.Time) {
 			}(e)
 		} else {
 			go func(e Tasker) {
+				defer m.wait.Done()
 				err := e.Run(ctx)
 				if err != nil {
 					log.Printf("tasker.run err: %s\n", err.Error())
@@ -581,6 +598,17 @@ func (m *taskManager) StopTask() {
 	}()
 }
 
+// GracefulShutdown wait all task done
+func (m *taskManager) GracefulShutdown() <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		m.stop <- true
+		m.wait.Wait()
+		close(done)
+	}()
+	return done
+}
+
 // AddTask add task with name
 func (m *taskManager) AddTask(taskname string, t Tasker) {
 	isChanged := false
@@ -597,7 +625,6 @@ func (m *taskManager) AddTask(taskname string, t Tasker) {
 			m.changed <- true
 		}()
 	}
-
 }
 
 // DeleteTask delete task with name
@@ -618,7 +645,7 @@ func (m *taskManager) DeleteTask(taskname string) {
 	}
 }
 
-//  ClearTask clear all tasks
+// ClearTask clear all tasks
 func (m *taskManager) ClearTask() {
 	isChanged := false
 
@@ -634,6 +661,20 @@ func (m *taskManager) ClearTask() {
 			m.changed <- true
 		}()
 	}
+}
+
+// GetAllTasks get all tasks
+func (m *taskManager) GetAllTasks() []Tasker {
+	m.taskLock.RLock()
+
+	l := make([]Tasker, 0, len(m.adminTaskList))
+
+	for _, t := range m.adminTaskList {
+		l = append(l, t)
+	}
+	m.taskLock.RUnlock()
+
+	return l
 }
 
 // MapSorter sort map for tasker
@@ -661,6 +702,7 @@ func (ms *MapSorter) Sort() {
 }
 
 func (ms *MapSorter) Len() int { return len(ms.Keys) }
+
 func (ms *MapSorter) Less(i, j int) bool {
 	if ms.Vals[i].GetNext(context.Background()).IsZero() {
 		return false
@@ -670,6 +712,7 @@ func (ms *MapSorter) Less(i, j int) bool {
 	}
 	return ms.Vals[i].GetNext(context.Background()).Before(ms.Vals[j].GetNext(context.Background()))
 }
+
 func (ms *MapSorter) Swap(i, j int) {
 	ms.Vals[i], ms.Vals[j] = ms.Vals[j], ms.Vals[i]
 	ms.Keys[i], ms.Keys[j] = ms.Keys[j], ms.Keys[i]
@@ -686,9 +729,9 @@ func getField(field string, r bounds) uint64 {
 }
 
 // getRange returns the bits indicated by the given expression:
-//   number | number "-" number [ "/" number ]
+//
+//	number | number "-" number [ "/" number ]
 func getRange(expr string, r bounds) uint64 {
-
 	var (
 		start, end, step uint
 		rangeAndStep     = strings.Split(expr, "/")

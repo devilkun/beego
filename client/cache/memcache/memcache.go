@@ -20,13 +20,13 @@
 //
 // Usage:
 // import(
-//   _ "github.com/beego/beego/v2/client/cache/memcache"
-//   "github.com/beego/beego/v2/client/cache"
+//
+//	_ "github.com/beego/beego/v2/client/cache/memcache"
+//	"github.com/beego/beego/v2/client/cache"
+//
 // )
 //
-//  bm, err := cache.NewCache("memcache", `{"conn":"127.0.0.1:11211"}`)
-//
-//  more docs http://beego.me/docs/module/cache.md
+//	bm, err := cache.NewCache("memcache", `{"conn":"127.0.0.1:11211"}`)
 package memcache
 
 import (
@@ -71,8 +71,8 @@ func (rc *Cache) GetMulti(ctx context.Context, keys []string) ([]interface{}, er
 	mv, err := rc.conn.GetMulti(keys)
 	if err != nil {
 		return rv, berror.Wrapf(err, cache.MemCacheCurdFailed,
-			"could not read multiple key-values from memcache, " +
-			"please check your keys, network and connection. Root cause: %s",
+			"could not read multiple key-values from memcache, "+
+				"please check your keys, network and connection. Root cause: %s",
 			err.Error())
 	}
 

@@ -20,6 +20,10 @@ import (
 	"reflect"
 	"time"
 
+	utils2 "github.com/beego/beego/v2/client/orm/internal/utils"
+
+	"github.com/beego/beego/v2/client/orm/internal/models"
+
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/beego/beego/v2/core/utils"
 )
@@ -28,8 +32,10 @@ const (
 	TxNameKey = "TxName"
 )
 
-var _ Ormer = new(filterOrmDecorator)
-var _ TxOrmer = new(filterOrmDecorator)
+var (
+	_ Ormer   = new(filterOrmDecorator)
+	_ TxOrmer = new(filterOrmDecorator)
+)
 
 type filterOrmDecorator struct {
 	ormer
@@ -75,8 +81,45 @@ func (f *filterOrmDecorator) Read(md interface{}, cols ...string) error {
 	return f.ReadWithCtx(context.Background(), md, cols...)
 }
 
+// TODO: implementation code
+func (f *filterOrmDecorator) ReadRaw(ctx context.Context, md interface{}, query string, args ...any) error {
+	mi, _ := models.DefaultModelCache.GetByMd(md)
+	inv := &Invocation{
+		Method:      "ReadRaw",
+		Args:        []interface{}{md, query, args},
+		Md:          md,
+		mi:          mi,
+		InsideTx:    f.insideTx,
+		TxStartTime: f.txStartTime,
+		f: func(c context.Context) []interface{} {
+			err := f.ormer.ReadRaw(c, md, query, args...)
+			return []interface{}{err}
+		},
+	}
+	res := f.root(ctx, inv)
+	return f.convertError(res[0])
+}
+
+func (f *filterOrmDecorator) ExecRaw(ctx context.Context, md interface{}, query string, args ...any) (sql.Result, error) {
+	mi, _ := models.DefaultModelCache.GetByMd(md)
+	inv := &Invocation{
+		Method:      "ExecRaw",
+		Args:        []interface{}{md, query, args},
+		Md:          md,
+		mi:          mi,
+		InsideTx:    f.insideTx,
+		TxStartTime: f.txStartTime,
+		f: func(c context.Context) []interface{} {
+			res, err := f.ormer.ExecRaw(c, md, query, args...)
+			return []interface{}{res, err}
+		},
+	}
+	res := f.root(ctx, inv)
+	return res[0].(sql.Result), f.convertError(res[1])
+}
+
 func (f *filterOrmDecorator) ReadWithCtx(ctx context.Context, md interface{}, cols ...string) error {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "ReadWithCtx",
 		Args:        []interface{}{md, cols},
@@ -98,7 +141,7 @@ func (f *filterOrmDecorator) ReadForUpdate(md interface{}, cols ...string) error
 }
 
 func (f *filterOrmDecorator) ReadForUpdateWithCtx(ctx context.Context, md interface{}, cols ...string) error {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "ReadForUpdateWithCtx",
 		Args:        []interface{}{md, cols},
@@ -120,8 +163,7 @@ func (f *filterOrmDecorator) ReadOrCreate(md interface{}, col1 string, cols ...s
 }
 
 func (f *filterOrmDecorator) ReadOrCreateWithCtx(ctx context.Context, md interface{}, col1 string, cols ...string) (bool, int64, error) {
-
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "ReadOrCreateWithCtx",
 		Args:        []interface{}{md, col1, cols},
@@ -143,8 +185,7 @@ func (f *filterOrmDecorator) LoadRelated(md interface{}, name string, args ...ut
 }
 
 func (f *filterOrmDecorator) LoadRelatedWithCtx(ctx context.Context, md interface{}, name string, args ...utils.KV) (int64, error) {
-
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "LoadRelatedWithCtx",
 		Args:        []interface{}{md, name, args},
@@ -162,8 +203,7 @@ func (f *filterOrmDecorator) LoadRelatedWithCtx(ctx context.Context, md interfac
 }
 
 func (f *filterOrmDecorator) QueryM2M(md interface{}, name string) QueryM2Mer {
-
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "QueryM2M",
 		Args:        []interface{}{md, name},
@@ -193,17 +233,17 @@ func (f *filterOrmDecorator) QueryTable(ptrStructOrTableName interface{}) QueryS
 	var (
 		name string
 		md   interface{}
-		mi   *modelInfo
+		mi   *models.ModelInfo
 	)
 
 	if table, ok := ptrStructOrTableName.(string); ok {
 		name = table
 	} else {
-		name = getFullName(indirectType(reflect.TypeOf(ptrStructOrTableName)))
+		name = models.GetFullName(utils2.IndirectType(reflect.TypeOf(ptrStructOrTableName)))
 		md = ptrStructOrTableName
 	}
 
-	if m, ok := modelCache.getByFullName(name); ok {
+	if m, ok := models.DefaultModelCache.GetByFullName(name); ok {
 		mi = m
 	}
 
@@ -257,7 +297,7 @@ func (f *filterOrmDecorator) Insert(md interface{}) (int64, error) {
 }
 
 func (f *filterOrmDecorator) InsertWithCtx(ctx context.Context, md interface{}) (int64, error) {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "InsertWithCtx",
 		Args:        []interface{}{md},
@@ -279,7 +319,7 @@ func (f *filterOrmDecorator) InsertOrUpdate(md interface{}, colConflitAndArgs ..
 }
 
 func (f *filterOrmDecorator) InsertOrUpdateWithCtx(ctx context.Context, md interface{}, colConflitAndArgs ...string) (int64, error) {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "InsertOrUpdateWithCtx",
 		Args:        []interface{}{md, colConflitAndArgs},
@@ -304,7 +344,7 @@ func (f *filterOrmDecorator) InsertMulti(bulk int, mds interface{}) (int64, erro
 func (f *filterOrmDecorator) InsertMultiWithCtx(ctx context.Context, bulk int, mds interface{}) (int64, error) {
 	var (
 		md interface{}
-		mi *modelInfo
+		mi *models.ModelInfo
 	)
 
 	sind := reflect.Indirect(reflect.ValueOf(mds))
@@ -312,7 +352,7 @@ func (f *filterOrmDecorator) InsertMultiWithCtx(ctx context.Context, bulk int, m
 	if (sind.Kind() == reflect.Array || sind.Kind() == reflect.Slice) && sind.Len() > 0 {
 		ind := reflect.Indirect(sind.Index(0))
 		md = ind.Interface()
-		mi, _ = modelCache.getByMd(md)
+		mi, _ = models.DefaultModelCache.GetByMd(md)
 	}
 
 	inv := &Invocation{
@@ -336,7 +376,7 @@ func (f *filterOrmDecorator) Update(md interface{}, cols ...string) (int64, erro
 }
 
 func (f *filterOrmDecorator) UpdateWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error) {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "UpdateWithCtx",
 		Args:        []interface{}{md, cols},
@@ -358,7 +398,7 @@ func (f *filterOrmDecorator) Delete(md interface{}, cols ...string) (int64, erro
 }
 
 func (f *filterOrmDecorator) DeleteWithCtx(ctx context.Context, md interface{}, cols ...string) (int64, error) {
-	mi, _ := modelCache.getByMd(md)
+	mi, _ := models.DefaultModelCache.GetByMd(md)
 	inv := &Invocation{
 		Method:      "DeleteWithCtx",
 		Args:        []interface{}{md, cols},
@@ -463,7 +503,7 @@ func (f *filterOrmDecorator) DoTxWithCtxAndOpts(ctx context.Context, opts *sql.T
 		TxStartTime: f.txStartTime,
 		TxName:      getTxNameFromCtx(ctx),
 		f: func(c context.Context) []interface{} {
-			err := doTxTemplate(f, c, opts, task)
+			err := doTxTemplate(c, f, opts, task)
 			return []interface{}{err}
 		},
 	}
@@ -503,7 +543,23 @@ func (f *filterOrmDecorator) Rollback() error {
 	return f.convertError(res[0])
 }
 
-func (f *filterOrmDecorator) convertError(v interface{}) error {
+func (f *filterOrmDecorator) RollbackUnlessCommit() error {
+	inv := &Invocation{
+		Method:      "RollbackUnlessCommit",
+		Args:        []interface{}{},
+		InsideTx:    f.insideTx,
+		TxStartTime: f.txStartTime,
+		TxName:      f.txName,
+		f: func(c context.Context) []interface{} {
+			err := f.TxCommitter.RollbackUnlessCommit()
+			return []interface{}{err}
+		},
+	}
+	res := f.root(context.Background(), inv)
+	return f.convertError(res[0])
+}
+
+func (*filterOrmDecorator) convertError(v interface{}) error {
 	if v == nil {
 		return nil
 	}

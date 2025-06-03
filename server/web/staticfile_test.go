@@ -6,14 +6,15 @@ import (
 	"compress/zlib"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-var currentWorkDir, _ = os.Getwd()
-var licenseFile = filepath.Join(currentWorkDir, "LICENSE")
+var (
+	currentWorkDir, _ = os.Getwd()
+	licenseFile       = filepath.Join(currentWorkDir, "LICENSE")
+)
 
 func testOpenFile(encoding string, content []byte, t *testing.T) {
 	fi, _ := os.Stat(licenseFile)
@@ -27,9 +28,10 @@ func testOpenFile(encoding string, content []byte, t *testing.T) {
 
 	assetOpenFileAndContent(sch, reader, content, t)
 }
+
 func TestOpenStaticFile_1(t *testing.T) {
 	file, _ := os.Open(licenseFile)
-	content, _ := ioutil.ReadAll(file)
+	content, _ := io.ReadAll(file)
 	testOpenFile("", content, t)
 }
 
@@ -39,17 +41,18 @@ func TestOpenStaticFileGzip_1(t *testing.T) {
 	fileWriter, _ := gzip.NewWriterLevel(&zipBuf, gzip.BestCompression)
 	io.Copy(fileWriter, file)
 	fileWriter.Close()
-	content, _ := ioutil.ReadAll(&zipBuf)
+	content, _ := io.ReadAll(&zipBuf)
 
 	testOpenFile("gzip", content, t)
 }
+
 func TestOpenStaticFileDeflate_1(t *testing.T) {
 	file, _ := os.Open(licenseFile)
 	var zipBuf bytes.Buffer
 	fileWriter, _ := zlib.NewWriterLevel(&zipBuf, zlib.BestCompression)
 	io.Copy(fileWriter, file)
 	fileWriter.Close()
-	content, _ := ioutil.ReadAll(&zipBuf)
+	content, _ := io.ReadAll(&zipBuf)
 
 	testOpenFile("deflate", content, t)
 }
@@ -85,7 +88,7 @@ func assetOpenFileAndContent(sch *serveContentHolder, reader *serveContentReader
 		t.Log("static content file size not same")
 		t.Fail()
 	}
-	bs, _ := ioutil.ReadAll(reader)
+	bs, _ := io.ReadAll(reader)
 	for i, v := range content {
 		if v != bs[i] {
 			t.Log("content not same")

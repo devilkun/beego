@@ -205,13 +205,13 @@ func TestRenderForm(t *testing.T) {
 		ID      int         `form:"-"`
 		Name    interface{} `form:"username"`
 		Age     int         `form:"age,text,年龄："`
-		Sex     string
+		Sex     string      `form:"sex,select"`
 		Email   []string
 		Intro   string `form:",textarea"`
 		Ignored string `form:"-"`
 	}
 
-	u := user{Name: "test", Intro: "Some Text"}
+	u := user{Name: "test", Intro: "Some Text", Sex: "Male,Female"}
 	output := RenderForm(u)
 	if output != template.HTML("") {
 		t.Errorf("output should be empty but got %v", output)
@@ -220,7 +220,10 @@ func TestRenderForm(t *testing.T) {
 	result := template.HTML(
 		`Name: <input name="username" type="text" value="test"></br>` +
 			`年龄：<input name="age" type="text" value="0"></br>` +
-			`Sex: <input name="Sex" type="text" value=""></br>` +
+			`Sex: <select name="sex"></br>` +
+			`  <option value="Male"> Male </option></br>` +
+			`  <option value="Female"> Female </option></br>` +
+			`</select></br>` +
 			`Intro: <textarea name="Intro">Some Text</textarea>`)
 	if output != result {
 		t.Errorf("output should equal `%v` but got `%v`", result, output)
@@ -299,7 +302,6 @@ func TestParseFormTag(t *testing.T) {
 	if !(name == "name" && !required) {
 		t.Errorf("Form Tag containing only name and not required was not correctly parsed.")
 	}
-
 }
 
 func TestMapGet(t *testing.T) {
@@ -376,5 +378,208 @@ func TestMapGet(t *testing.T) {
 		}
 	} else {
 		t.Errorf("Error happens %v", err)
+	}
+}
+
+func Test_eq(t *testing.T) {
+	tests := []struct {
+		a      interface{}
+		b      interface{}
+		result bool
+	}{
+		{uint8(1), int(1), true},
+		{uint8(3), int(1), false},
+		{uint16(1), int(1), true},
+		{uint16(3), int(1), false},
+		{uint32(1), int(1), true},
+		{uint32(3), int(1), false},
+		{uint(1), int(1), true},
+		{uint(3), int(1), false},
+		{uint64(1), int(1), true},
+		{uint64(3), int(1), false},
+		{int8(-1), uint(1), false},
+		{int16(-2), uint(1), false},
+		{int32(-3), uint(1), false},
+		{int64(-4), uint(1), false},
+		{int8(1), uint(1), true},
+		{int16(1), uint(1), true},
+		{int32(1), uint(1), true},
+		{int64(1), uint(1), true},
+		{int8(-1), uint8(1), false},
+		{int16(-2), uint8(1), false},
+		{int32(-3), uint8(1), false},
+		{int64(-4), uint8(1), false},
+		{int8(1), uint8(1), true},
+		{int16(1), uint8(1), true},
+		{int32(1), uint8(1), true},
+		{int64(1), uint8(1), true},
+		{int8(-1), uint16(1), false},
+		{int16(-2), uint16(1), false},
+		{int32(-3), uint16(1), false},
+		{int64(-4), uint16(1), false},
+		{int8(1), uint16(1), true},
+		{int16(1), uint16(1), true},
+		{int32(1), uint16(1), true},
+		{int64(1), uint16(1), true},
+		{int8(-1), uint32(1), false},
+		{int16(-2), uint32(1), false},
+		{int32(-3), uint32(1), false},
+		{int64(-4), uint32(1), false},
+		{int8(1), uint32(1), true},
+		{int16(1), uint32(1), true},
+		{int32(1), uint32(1), true},
+		{int64(1), uint32(1), true},
+		{int8(-1), uint64(1), false},
+		{int16(-2), uint64(1), false},
+		{int32(-3), uint64(1), false},
+		{int64(-4), uint64(1), false},
+		{int8(1), uint64(1), true},
+		{int16(1), uint64(1), true},
+		{int32(1), uint64(1), true},
+		{int64(1), uint64(1), true},
+	}
+
+	for _, test := range tests {
+		if res, err := eq(test.a, test.b); err != nil {
+			if res != test.result {
+				t.Errorf("a:%v(%T) equals b:%v(%T) should be %v", test.a, test.a, test.b, test.b, test.result)
+			}
+		}
+	}
+}
+
+func Test_lt(t *testing.T) {
+	tests := []struct {
+		a      interface{}
+		b      interface{}
+		result bool
+	}{
+		{uint8(1), int(3), true},
+		{uint8(1), int(1), false},
+		{uint8(3), int(1), false},
+		{uint16(1), int(3), true},
+		{uint16(1), int(1), false},
+		{uint16(3), int(1), false},
+		{uint32(1), int(3), true},
+		{uint32(1), int(1), false},
+		{uint32(3), int(1), false},
+		{uint(1), int(3), true},
+		{uint(1), int(1), false},
+		{uint(3), int(1), false},
+		{uint64(1), int(3), true},
+		{uint64(1), int(1), false},
+		{uint64(3), int(1), false},
+		{int(-1), int(1), true},
+		{int(1), int(1), false},
+		{int(1), int(3), true},
+		{int(3), int(1), false},
+		{int8(-1), uint(1), true},
+		{int8(1), uint(1), false},
+		{int8(1), uint(3), true},
+		{int8(3), uint(1), false},
+		{int16(-1), uint(1), true},
+		{int16(1), uint(1), false},
+		{int16(1), uint(3), true},
+		{int16(3), uint(1), false},
+		{int32(-1), uint(1), true},
+		{int32(1), uint(1), false},
+		{int32(1), uint(3), true},
+		{int32(3), uint(1), false},
+		{int64(-1), uint(1), true},
+		{int64(1), uint(1), false},
+		{int64(1), uint(3), true},
+		{int64(3), uint(1), false},
+		{int(-1), uint(1), true},
+		{int(1), uint(1), false},
+		{int(1), uint(3), true},
+		{int(3), uint(1), false},
+		{int8(-1), uint8(1), true},
+		{int8(1), uint8(1), false},
+		{int8(1), uint8(3), true},
+		{int8(3), uint8(1), false},
+		{int16(-1), uint8(1), true},
+		{int16(1), uint8(1), false},
+		{int16(1), uint8(3), true},
+		{int16(3), uint8(1), false},
+		{int32(-1), uint8(1), true},
+		{int32(1), uint8(1), false},
+		{int32(1), uint8(3), true},
+		{int32(3), uint8(1), false},
+		{int64(-1), uint8(1), true},
+		{int64(1), uint8(1), false},
+		{int64(1), uint8(3), true},
+		{int64(3), uint8(1), false},
+		{int(-1), uint8(1), true},
+		{int(1), uint8(1), false},
+		{int(1), uint8(3), true},
+		{int(3), uint8(1), false},
+		{int8(-1), uint16(1), true},
+		{int8(1), uint16(1), false},
+		{int8(1), uint16(3), true},
+		{int8(3), uint16(1), false},
+		{int16(-1), uint16(1), true},
+		{int16(1), uint16(1), false},
+		{int16(1), uint16(3), true},
+		{int16(3), uint16(1), false},
+		{int32(-1), uint16(1), true},
+		{int32(1), uint16(1), false},
+		{int32(1), uint16(3), true},
+		{int32(3), uint16(1), false},
+		{int64(-1), uint16(1), true},
+		{int64(1), uint16(1), false},
+		{int64(1), uint16(3), true},
+		{int64(3), uint16(1), false},
+		{int(-1), uint16(1), true},
+		{int(1), uint16(1), false},
+		{int(1), uint16(3), true},
+		{int(3), uint16(1), false},
+		{int8(-1), uint32(1), true},
+		{int8(1), uint32(1), false},
+		{int8(1), uint32(3), true},
+		{int8(3), uint32(1), false},
+		{int16(-1), uint32(1), true},
+		{int16(1), uint32(1), false},
+		{int16(1), uint32(3), true},
+		{int16(3), uint32(1), false},
+		{int32(-1), uint32(1), true},
+		{int32(1), uint32(1), false},
+		{int32(1), uint32(3), true},
+		{int32(3), uint32(1), false},
+		{int64(-1), uint32(1), true},
+		{int64(1), uint32(1), false},
+		{int64(1), uint32(3), true},
+		{int64(3), uint32(1), false},
+		{int(-1), uint32(1), true},
+		{int(1), uint32(1), false},
+		{int(1), uint32(3), true},
+		{int(3), uint32(1), false},
+		{int8(-1), uint64(1), true},
+		{int8(1), uint64(1), false},
+		{int8(1), uint64(3), true},
+		{int8(3), uint64(1), false},
+		{int16(-1), uint64(1), true},
+		{int16(1), uint64(1), false},
+		{int16(1), uint64(3), true},
+		{int16(3), uint64(1), false},
+		{int32(-1), uint64(1), true},
+		{int32(1), uint64(1), false},
+		{int32(1), uint64(3), true},
+		{int32(3), uint64(1), false},
+		{int64(-1), uint64(1), true},
+		{int64(1), uint64(1), false},
+		{int64(1), uint64(3), true},
+		{int64(3), uint64(1), false},
+		{int(-1), uint64(1), true},
+		{int(1), uint64(1), false},
+		{int(1), uint64(3), true},
+		{int(3), uint64(1), false},
+	}
+
+	for _, test := range tests {
+		if res, err := lt(test.a, test.b); err != nil {
+			if res != test.result {
+				t.Errorf("a:%v(%T) lt b:%v(%T) should be %v", test.a, test.a, test.b, test.b, test.result)
+			}
+		}
 	}
 }

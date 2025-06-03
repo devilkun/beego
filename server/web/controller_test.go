@@ -15,13 +15,27 @@
 package web
 
 import (
+	"bytes"
+	"io"
 	"math"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/beego/beego/v2/server/web/context"
+)
+
+var (
+	fileKey  = "file1"
+	testFile = filepath.Join(currentWorkDir, "test/static/file.txt")
+	toFile   = filepath.Join(currentWorkDir, "test/static/file2.txt")
 )
 
 func TestGetInt(t *testing.T) {
@@ -135,7 +149,7 @@ func TestAdditionalViewPaths(t *testing.T) {
 	dir2file := "file2.tpl"
 
 	genFile := func(dir string, name string, content string) {
-		os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0777)
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o777)
 		if f, err := os.Create(filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		} else {
@@ -143,7 +157,6 @@ func TestAdditionalViewPaths(t *testing.T) {
 			f.WriteString(content)
 			f.Close()
 		}
-
 	}
 	genFile(dir1, dir1file, `<div>{{.Content}}</div>`)
 	genFile(dir2, dir2file, `<html>{{.Content}}</html>`)
@@ -179,4 +192,209 @@ func TestAdditionalViewPaths(t *testing.T) {
 	ctrl.TplName = "file2.tpl"
 	ctrl.ViewPath = dir2
 	ctrl.RenderString()
+}
+
+func TestBindJson(t *testing.T) {
+	var s struct {
+		Foo string `json:"foo"`
+	}
+	header := map[string][]string{"Content-Type": {"application/json"}}
+	request := &http.Request{Header: header}
+	input := &context.BeegoInput{RequestBody: []byte(`{"foo": "FOO"}`)}
+	ctx := &context.Context{Request: request, Input: input}
+	ctrlr := Controller{Ctx: ctx}
+	err := ctrlr.Bind(&s)
+	require.NoError(t, err)
+	assert.Equal(t, "FOO", s.Foo)
+}
+
+func TestBindNoContentType(t *testing.T) {
+	var s struct {
+		Foo string `json:"foo"`
+	}
+	header := map[string][]string{}
+	request := &http.Request{Header: header}
+	input := &context.BeegoInput{RequestBody: []byte(`{"foo": "FOO"}`)}
+	ctx := &context.Context{Request: request, Input: input}
+	ctrlr := Controller{Ctx: ctx}
+	err := ctrlr.Bind(&s)
+	require.NoError(t, err)
+	assert.Equal(t, "FOO", s.Foo)
+}
+
+func TestBindXML(t *testing.T) {
+	var s struct {
+		Foo string `xml:"foo"`
+	}
+	xmlBody := `<?xml version="1.0" encoding="UTF-8"?>
+<root>
+   <foo>FOO</foo>
+</root>`
+	header := map[string][]string{"Content-Type": {"text/xml"}}
+	request := &http.Request{Header: header}
+	input := &context.BeegoInput{RequestBody: []byte(xmlBody)}
+	ctx := &context.Context{Request: request, Input: input}
+	ctrlr := Controller{Ctx: ctx}
+	err := ctrlr.Bind(&s)
+	require.NoError(t, err)
+	assert.Equal(t, "FOO", s.Foo)
+}
+
+func TestBindYAML(t *testing.T) {
+	var s struct {
+		Foo string `yaml:"foo"`
+	}
+	header := map[string][]string{"Content-Type": {"application/x-yaml"}}
+	request := &http.Request{Header: header}
+	input := &context.BeegoInput{RequestBody: []byte("foo: FOO")}
+	ctx := &context.Context{Request: request, Input: input}
+	ctrlr := Controller{Ctx: ctx}
+	err := ctrlr.Bind(&s)
+	require.NoError(t, err)
+	assert.Equal(t, "FOO", s.Foo)
+}
+
+type TestRespController struct {
+	Controller
+}
+
+func (t *TestRespController) TestResponse() {
+	type S struct {
+		Foo string `json:"foo" xml:"foo" yaml:"foo"`
+	}
+
+	bar := S{Foo: "bar"}
+
+	_ = t.Resp(bar)
+}
+
+func (t *TestRespController) TestSaveToFile() {
+	err := t.SaveToFile(fileKey, toFile)
+	if err != nil {
+		t.Ctx.WriteString("save file fail")
+	}
+	err = os.Remove(toFile)
+	if err != nil {
+		t.Ctx.WriteString("save file fail")
+	}
+	t.Ctx.WriteString("save file success")
+}
+
+type respTestCase struct {
+	Accept                string
+	ExpectedContentLength int64
+	ExpectedResponse      string
+}
+
+func TestControllerResp(t *testing.T) {
+	// test cases
+	tcs := []respTestCase{
+		{Accept: context.ApplicationJSON, ExpectedContentLength: 13, ExpectedResponse: `{"foo":"bar"}`},
+		{Accept: context.ApplicationXML, ExpectedContentLength: 21, ExpectedResponse: `<S><foo>bar</foo></S>`},
+		{Accept: context.ApplicationYAML, ExpectedContentLength: 9, ExpectedResponse: "foo: bar\n"},
+		{Accept: "OTHER", ExpectedContentLength: 13, ExpectedResponse: `{"foo":"bar"}`},
+	}
+
+	for _, tc := range tcs {
+		testControllerRespTestCases(t, tc)
+	}
+}
+
+func testControllerRespTestCases(t *testing.T, tc respTestCase) {
+	// create fake GET request
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Set("Accept", tc.Accept)
+	w := httptest.NewRecorder()
+
+	// setup the handler
+	handler := NewControllerRegister()
+	handler.Add("/", &TestRespController{}, WithRouterMethods(&TestRespController{}, "get:TestResponse"))
+	handler.ServeHTTP(w, r)
+
+	response := w.Result()
+	if response.ContentLength != tc.ExpectedContentLength {
+		t.Errorf("TestResponse() unable to validate content length %d for %s", response.ContentLength, tc.Accept)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		t.Errorf("TestResponse() failed to validate response code for %s", tc.Accept)
+	}
+
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Errorf("TestResponse() failed to parse response body for %s", tc.Accept)
+	}
+	bodyString := string(bodyBytes)
+	if bodyString != tc.ExpectedResponse {
+		t.Errorf("TestResponse() failed to validate response body '%s' for %s", bodyString, tc.Accept)
+	}
+}
+
+func createReqBody(filePath string) (string, io.Reader, error) {
+	var err error
+
+	buf := new(bytes.Buffer)
+	bw := multipart.NewWriter(buf) // body writer
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	// text part1
+	p1w, _ := bw.CreateFormField("name")
+	_, err = p1w.Write([]byte("Tony Bai"))
+	if err != nil {
+		return "", nil, err
+	}
+
+	// text part2
+	p2w, _ := bw.CreateFormField("age")
+	_, err = p2w.Write([]byte("15"))
+	if err != nil {
+		return "", nil, err
+	}
+
+	// file part1
+	_, fileName := filepath.Split(filePath)
+	fw1, _ := bw.CreateFormFile(fileKey, fileName)
+	_, err = io.Copy(fw1, f)
+	if err != nil {
+		return "", nil, err
+	}
+
+	_ = bw.Close() // write the tail boundary
+	return bw.FormDataContentType(), buf, nil
+}
+
+func TestControllerSaveFile(t *testing.T) {
+	// create body
+	contType, bodyReader, err := createReqBody(testFile)
+	assert.NoError(t, err)
+
+	// create fake POST request
+	r, _ := http.NewRequest("POST", "/upload_file", bodyReader)
+	r.Header.Set("Accept", context.ApplicationForm)
+	r.Header.Set("Content-Type", contType)
+	w := httptest.NewRecorder()
+
+	// setup the handler
+	handler := NewControllerRegister()
+	handler.Add("/upload_file", &TestRespController{},
+		WithRouterMethods(&TestRespController{}, "post:TestSaveToFile"))
+	handler.ServeHTTP(w, r)
+
+	response := w.Result()
+	bs := make([]byte, 100)
+	n, err := response.Body.Read(bs)
+	assert.NoError(t, err)
+	if string(bs[:n]) == "save file fail" {
+		t.Errorf("TestSaveToFile() failed to validate response")
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Errorf("TestSaveToFile() failed to validate response code for %s", context.ApplicationJSON)
+	}
 }

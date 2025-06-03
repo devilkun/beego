@@ -18,8 +18,8 @@ import (
 	"context"
 	"net/http"
 
-	logKit "github.com/go-kit/kit/log"
 	opentracingKit "github.com/go-kit/kit/tracing/opentracing"
+	logKit "github.com/go-kit/log"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
 
@@ -35,9 +35,7 @@ type FilterChainBuilder struct {
 }
 
 func (builder *FilterChainBuilder) FilterChain(next httplib.Filter) httplib.Filter {
-
 	return func(ctx context.Context, req *httplib.BeegoHTTPRequest) (*http.Response, error) {
-
 		method := req.GetRequest().Method
 
 		operationName := method + "#" + req.GetRequest().URL.String()

@@ -26,7 +26,6 @@ import (
 // ConnTCPListener takes a TCP listener and accepts n TCP connections
 // Returns connections using connChan
 func connTCPListener(t *testing.T, n int, ln net.Listener, connChan chan<- net.Conn) {
-
 	// Listen and accept n incoming connections
 	for i := 0; i < n; i++ {
 		conn, err := ln.Accept()
@@ -52,7 +51,7 @@ func TestConn(t *testing.T) {
 func TestReconnect(t *testing.T) {
 	// Setup connection listener
 	newConns := make(chan net.Conn)
-	connNum := 2
+	connNum := 3
 	ln, err := net.Listen("tcp", ":6002")
 	if err != nil {
 		t.Log("Error listening:", err.Error())

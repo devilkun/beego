@@ -20,6 +20,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/beego/beego/v2/client/orm/internal/utils"
+
+	"github.com/beego/beego/v2/client/orm/internal/models"
 )
 
 type commander interface {
@@ -27,9 +31,7 @@ type commander interface {
 	Run() error
 }
 
-var (
-	commands = make(map[string]commander)
-)
+var commands = make(map[string]commander)
 
 // print help.
 func printHelp(errs ...string) {
@@ -55,7 +57,7 @@ func RunCommand() {
 
 	BootStrap()
 
-	args := argString(os.Args[2:])
+	args := utils.ArgString(os.Args[2:])
 	name := args.Get(0)
 
 	if name == "help" {
@@ -77,7 +79,7 @@ func RunCommand() {
 
 // sync database struct command interface.
 type commandSyncDb struct {
-	al        *alias
+	al        *DB
 	force     bool
 	verbose   bool
 	noInfo    bool
@@ -94,7 +96,7 @@ func (d *commandSyncDb) Parse(args []string) {
 	flagSet.BoolVar(&d.verbose, "v", false, "verbose info")
 	flagSet.Parse(args)
 
-	d.al = getDbAlias(name)
+	d.al = getDB(name)
 }
 
 // Run orm line command.
@@ -102,7 +104,7 @@ func (d *commandSyncDb) Run() error {
 	var drops []string
 	var err error
 	if d.force {
-		drops, err = modelCache.getDbDropSQL(d.al)
+		drops, err = getDbDropSQL(models.DefaultModelCache, d.al)
 		if err != nil {
 			return err
 		}
@@ -111,10 +113,10 @@ func (d *commandSyncDb) Run() error {
 	db := d.al.DB
 
 	if d.force && len(drops) > 0 {
-		for i, mi := range modelCache.allOrdered() {
+		for i, mi := range models.DefaultModelCache.AllOrdered() {
 			query := drops[i]
 			if !d.noInfo {
-				fmt.Printf("drop table `%s`\n", mi.table)
+				fmt.Printf("drop table `%s`\n", mi.Table)
 			}
 			_, err := db.Exec(query)
 			if d.verbose {
@@ -129,12 +131,12 @@ func (d *commandSyncDb) Run() error {
 		}
 	}
 
-	createQueries, indexes, err := modelCache.getDbCreateSQL(d.al)
+	createQueries, indexes, err := getDbCreateSQL(models.DefaultModelCache, d.al)
 	if err != nil {
 		return err
 	}
 
-	tables, err := d.al.DbBaser.GetTables(db)
+	tables, err := d.al.dbBaser.GetTables(db)
 	if err != nil {
 		if d.rtOnError {
 			return err
@@ -143,20 +145,20 @@ func (d *commandSyncDb) Run() error {
 	}
 
 	ctx := context.Background()
-	for i, mi := range modelCache.allOrdered() {
+	for i, mi := range models.DefaultModelCache.AllOrdered() {
 
-		if !isApplicableTableForDB(mi.addrField, d.al.Name) {
-			fmt.Printf("table `%s` is not applicable to database '%s'\n", mi.table, d.al.Name)
+		if !models.IsApplicableTableForDB(mi.AddrField, d.al.name) {
+			fmt.Printf("table `%s` is not applicable to database '%s'\n", mi.Table, d.al.name)
 			continue
 		}
 
-		if tables[mi.table] {
+		if tables[mi.Table] {
 			if !d.noInfo {
-				fmt.Printf("table `%s` already exists, skip\n", mi.table)
+				fmt.Printf("table `%s` already exists, skip\n", mi.Table)
 			}
 
-			var fields []*fieldInfo
-			columns, err := d.al.DbBaser.GetColumns(ctx, db, mi.table)
+			var fields []*models.FieldInfo
+			columns, err := d.al.dbBaser.GetColumns(ctx, db, mi.Table)
 			if err != nil {
 				if d.rtOnError {
 					return err
@@ -164,8 +166,8 @@ func (d *commandSyncDb) Run() error {
 				fmt.Printf("    %s\n", err.Error())
 			}
 
-			for _, fi := range mi.fields.fieldsDB {
-				if _, ok := columns[fi.column]; !ok {
+			for _, fi := range mi.Fields.FieldsDB {
+				if _, ok := columns[fi.Column]; !ok {
 					fields = append(fields, fi)
 				}
 			}
@@ -174,7 +176,7 @@ func (d *commandSyncDb) Run() error {
 				query := getColumnAddQuery(d.al, fi)
 
 				if !d.noInfo {
-					fmt.Printf("add column `%s` for table `%s`\n", fi.fullName, mi.table)
+					fmt.Printf("add column `%s` for table `%s`\n", fi.FullName, mi.Table)
 				}
 
 				_, err := db.Exec(query)
@@ -189,8 +191,8 @@ func (d *commandSyncDb) Run() error {
 				}
 			}
 
-			for _, idx := range indexes[mi.table] {
-				if !d.al.DbBaser.IndexExists(ctx, db, idx.Table, idx.Name) {
+			for _, idx := range indexes[mi.Table] {
+				if !d.al.dbBaser.IndexExists(ctx, db, idx.Table, idx.Name) {
 					if !d.noInfo {
 						fmt.Printf("create index `%s` for table `%s`\n", idx.Name, idx.Table)
 					}
@@ -213,11 +215,11 @@ func (d *commandSyncDb) Run() error {
 		}
 
 		if !d.noInfo {
-			fmt.Printf("create table `%s` \n", mi.table)
+			fmt.Printf("create table `%s` \n", mi.Table)
 		}
 
 		queries := []string{createQueries[i]}
-		for _, idx := range indexes[mi.table] {
+		for _, idx := range indexes[mi.Table] {
 			queries = append(queries, idx.SQL)
 		}
 
@@ -244,7 +246,7 @@ func (d *commandSyncDb) Run() error {
 
 // database creation commander interface implement.
 type commandSQLAll struct {
-	al *alias
+	al *DB
 }
 
 // Parse orm command line arguments.
@@ -255,19 +257,19 @@ func (d *commandSQLAll) Parse(args []string) {
 	flagSet.StringVar(&name, "db", "default", "DataBase alias name")
 	flagSet.Parse(args)
 
-	d.al = getDbAlias(name)
+	d.al = getDB(name)
 }
 
 // Run orm line command.
 func (d *commandSQLAll) Run() error {
-	createQueries, indexes, err := modelCache.getDbCreateSQL(d.al)
+	createQueries, indexes, err := getDbCreateSQL(models.DefaultModelCache, d.al)
 	if err != nil {
 		return err
 	}
 	var all []string
-	for i, mi := range modelCache.allOrdered() {
+	for i, mi := range models.DefaultModelCache.AllOrdered() {
 		queries := []string{createQueries[i]}
-		for _, idx := range indexes[mi.table] {
+		for _, idx := range indexes[mi.Table] {
 			queries = append(queries, idx.SQL)
 		}
 		sql := strings.Join(queries, "\n")
@@ -286,11 +288,11 @@ func init() {
 // RunSyncdb run syncdb command line.
 // name: Table's alias name (default is "default")
 // force: Run the next sql command even if the current gave an error
-// verbose: Print all information, useful for debugging
+// verbose: Print All information, useful for debugging
 func RunSyncdb(name string, force bool, verbose bool) error {
 	BootStrap()
 
-	al := getDbAlias(name)
+	al := getDB(name)
 	cmd := new(commandSyncDb)
 	cmd.al = al
 	cmd.force = force

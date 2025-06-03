@@ -30,6 +30,14 @@ func TestDefaults(t *testing.T) {
 	if BConfig.WebConfig.FlashSeparator != "BEEGOFLASH" {
 		t.Errorf("FlashName was not set to default.")
 	}
+
+	if BConfig.ControllerSuffix != "Controller" {
+		t.Errorf("ControllerSuffix was not set to default.")
+	}
+}
+
+func TestLoadAppConfig(t *testing.T) {
+	println(1 << 30)
 }
 
 func TestAssignConfig_01(t *testing.T) {
@@ -105,7 +113,6 @@ func TestAssignConfig_02(t *testing.T) {
 		t.Log(_BConfig.Log.FileLineNum)
 		t.FailNow()
 	}
-
 }
 
 func TestAssignConfig_03(t *testing.T) {

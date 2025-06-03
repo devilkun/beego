@@ -37,6 +37,7 @@ type BeegoHTTPSettings struct {
 	Retries          int // if set to -1 means will retry forever
 	RetryDelay       time.Duration
 	FilterChains     []FilterChain
+	EscapeHTML       bool // if set to false means will not escape escape HTML special characters during processing, default true
 }
 
 // createDefaultCookie creates a global cookiejar to store cookies.
@@ -55,16 +56,24 @@ func SetDefaultSetting(setting BeegoHTTPSettings) {
 	defaultSetting = setting
 }
 
+// GetDefaultSetting return current default setting
+func GetDefaultSetting() BeegoHTTPSettings {
+	return defaultSetting
+}
+
 var defaultSetting = BeegoHTTPSettings{
 	UserAgent:        "beegoServer",
 	ConnectTimeout:   60 * time.Second,
 	ReadWriteTimeout: 60 * time.Second,
 	Gzip:             true,
 	FilterChains:     make([]FilterChain, 0, 4),
+	EscapeHTML:       true,
 }
 
-var defaultCookieJar http.CookieJar
-var settingMutex sync.Mutex
+var (
+	defaultCookieJar http.CookieJar
+	settingMutex     sync.Mutex
+)
 
 // AddDefaultFilter add a new filter into defaultSetting
 // Be careful about using this method if you invoke SetDefaultSetting somewhere

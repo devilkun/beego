@@ -15,7 +15,6 @@
 package toml
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -32,7 +31,7 @@ type Config struct {
 
 // Parse accepts filename as the parameter
 func (c *Config) Parse(filename string) (config.Configer, error) {
-	ctx, err := ioutil.ReadFile(filename)
+	ctx, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +46,6 @@ func (c *Config) ParseData(data []byte) (config.Configer, error) {
 	return &configContainer{
 		t: t,
 	}, nil
-
 }
 
 // configContainer support key looks like "a.b.c"
@@ -70,7 +68,6 @@ func (c *configContainer) Set(key, val string) error {
 // return error if key not found or value is invalid type
 func (c *configContainer) String(key string) (string, error) {
 	res, err := c.get(key)
-
 	if err != nil {
 		return "", err
 	}
@@ -90,7 +87,6 @@ func (c *configContainer) String(key string) (string, error) {
 // return error if key not found or value is invalid type
 func (c *configContainer) Strings(key string) ([]string, error) {
 	val, err := c.get(key)
-
 	if err != nil {
 		return []string{}, err
 	}
@@ -138,12 +134,10 @@ func (c *configContainer) Int64(key string) (int64, error) {
 	}
 }
 
-// bool return bool value
+// Bool return bool value
 // return error if key not found or value is invalid type
 func (c *configContainer) Bool(key string) (bool, error) {
-
 	res, err := c.get(key)
-
 	if err != nil {
 		return false, err
 	}
@@ -330,7 +324,6 @@ func (c *configContainer) get(key string) (interface{}, error) {
 
 	segs := strings.Split(key, keySeparator)
 	t, err := subTree(c.t, segs[0:len(segs)-1])
-
 	if err != nil {
 		return nil, err
 	}

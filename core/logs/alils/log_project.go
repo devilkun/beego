@@ -9,7 +9,7 @@ package alils
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 )
@@ -45,13 +45,13 @@ func (p *LogProject) ListLogStore() (storeNames []string, err error) {
 		"x-sls-bodyrawsize": "0",
 	}
 
-	uri := fmt.Sprintf("/logstores")
+	uri := "/logstores"
 	r, err := request(p, "GET", uri, h, nil)
 	if err != nil {
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (p *LogProject) GetLogStore(name string) (s *LogStore, err error) {
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -128,7 +128,6 @@ func (p *LogProject) GetLogStore(name string) (s *LogStore, err error) {
 // and ttl is time-to-live(in day) of logs,
 // and shardCnt is the number of shards.
 func (p *LogProject) CreateLogStore(name string, ttl, shardCnt int) (err error) {
-
 	type Body struct {
 		Name       string `json:"logstoreName"`
 		TTL        int    `json:"ttl"`
@@ -157,7 +156,7 @@ func (p *LogProject) CreateLogStore(name string, ttl, shardCnt int) (err error) 
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -189,7 +188,7 @@ func (p *LogProject) DeleteLogStore(name string) (err error) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -212,7 +211,6 @@ func (p *LogProject) DeleteLogStore(name string) (err error) {
 // UpdateLogStore updates a logstore according by logstore name,
 // obviously we can't modify the logstore name itself.
 func (p *LogProject) UpdateLogStore(name string, ttl, shardCnt int) (err error) {
-
 	type Body struct {
 		Name       string `json:"logstoreName"`
 		TTL        int    `json:"ttl"`
@@ -241,7 +239,7 @@ func (p *LogProject) UpdateLogStore(name string, ttl, shardCnt int) (err error) 
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -279,7 +277,7 @@ func (p *LogProject) ListMachineGroup(offset, size int) (m []string, total int, 
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -326,7 +324,7 @@ func (p *LogProject) GetMachineGroup(name string) (m *MachineGroup, err error) {
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -355,7 +353,6 @@ func (p *LogProject) GetMachineGroup(name string) (m *MachineGroup, err error) {
 
 // CreateMachineGroup creates a new machine group in SLS.
 func (p *LogProject) CreateMachineGroup(m *MachineGroup) (err error) {
-
 	body, err := json.Marshal(m)
 	if err != nil {
 		return
@@ -372,7 +369,7 @@ func (p *LogProject) CreateMachineGroup(m *MachineGroup) (err error) {
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -395,7 +392,6 @@ func (p *LogProject) CreateMachineGroup(m *MachineGroup) (err error) {
 
 // UpdateMachineGroup updates a machine group.
 func (p *LogProject) UpdateMachineGroup(m *MachineGroup) (err error) {
-
 	body, err := json.Marshal(m)
 	if err != nil {
 		return
@@ -412,7 +408,7 @@ func (p *LogProject) UpdateMachineGroup(m *MachineGroup) (err error) {
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -444,7 +440,7 @@ func (p *LogProject) DeleteMachineGroup(name string) (err error) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -481,7 +477,7 @@ func (p *LogProject) ListConfig(offset, size int) (cfgNames []string, total int,
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -526,7 +522,7 @@ func (p *LogProject) GetConfig(name string) (c *LogConfig, err error) {
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -555,7 +551,6 @@ func (p *LogProject) GetConfig(name string) (c *LogConfig, err error) {
 
 // UpdateConfig updates a config.
 func (p *LogProject) UpdateConfig(c *LogConfig) (err error) {
-
 	body, err := json.Marshal(c)
 	if err != nil {
 		return
@@ -572,7 +567,7 @@ func (p *LogProject) UpdateConfig(c *LogConfig) (err error) {
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -595,7 +590,6 @@ func (p *LogProject) UpdateConfig(c *LogConfig) (err error) {
 
 // CreateConfig creates a new config in SLS.
 func (p *LogProject) CreateConfig(c *LogConfig) (err error) {
-
 	body, err := json.Marshal(c)
 	if err != nil {
 		return
@@ -612,7 +606,7 @@ func (p *LogProject) CreateConfig(c *LogConfig) (err error) {
 		return
 	}
 
-	body, err = ioutil.ReadAll(r.Body)
+	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -644,7 +638,7 @@ func (p *LogProject) DeleteConfig(name string) (err error) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -676,7 +670,7 @@ func (p *LogProject) GetAppliedMachineGroups(confName string) (groupNames []stri
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -721,7 +715,7 @@ func (p *LogProject) GetAppliedConfigs(groupName string) (confNames []string, er
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -766,7 +760,7 @@ func (p *LogProject) ApplyConfigToMachineGroup(confName, groupName string) (err 
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
@@ -798,7 +792,7 @@ func (p *LogProject) RemoveConfigFromMachineGroup(confName, groupName string) (e
 		return
 	}
 
-	buf, err := ioutil.ReadAll(r.Body)
+	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}

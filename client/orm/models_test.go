@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/beego/beego/v2/client/orm/internal/models"
+
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	// As tidb can't use go get, so disable the tidb testing now
-	// _ "github.com/pingcap/tidb"
 )
 
 // A slice string field.
@@ -81,7 +81,7 @@ func (e *SliceStringField) RawValue() interface{} {
 	return e.String()
 }
 
-var _ Fielder = new(SliceStringField)
+var _ models.Fielder = new(SliceStringField)
 
 // A json field.
 type JSONFieldTest struct {
@@ -113,7 +113,7 @@ func (e *JSONFieldTest) RawValue() interface{} {
 	return e.String()
 }
 
-var _ Fielder = new(JSONFieldTest)
+var _ models.Fielder = new(JSONFieldTest)
 
 type Data struct {
 	ID       int `orm:"column(id)"`
@@ -195,22 +195,24 @@ type DataNull struct {
 	DateTimePtr       *time.Time      `orm:"null"`
 }
 
-type String string
-type Boolean bool
-type Byte byte
-type Rune rune
-type Int int
-type Int8 int8
-type Int16 int16
-type Int32 int32
-type Int64 int64
-type Uint uint
-type Uint8 uint8
-type Uint16 uint16
-type Uint32 uint32
-type Uint64 uint64
-type Float32 float64
-type Float64 float64
+type (
+	String  string
+	Boolean bool
+	Byte    byte
+	Rune    rune
+	Int     int
+	Int8    int8
+	Int16   int16
+	Int32   int32
+	Int64   int64
+	Uint    uint
+	Uint8   uint8
+	Uint16  uint16
+	Uint32  uint32
+	Uint64  uint64
+	Float32 float64
+	Float64 float64
+)
 
 type DataCustom struct {
 	ID      int `orm:"column(id)"`
@@ -346,6 +348,11 @@ func (u *Post) TableIndex() [][]string {
 func NewPost() *Post {
 	obj := new(Post)
 	return obj
+}
+
+type NullValue struct {
+	ID    int    `orm:"column(id)"`
+	Value string `orm:"size(30);null"`
 }
 
 type Tag struct {
@@ -488,8 +495,7 @@ var (
 	dDbBaser dbBaser
 )
 
-var (
-	helpinfo = `need driver and source!
+var helpinfo = `need driver and source!
 
 	Default DB Drivers.
 
@@ -501,11 +507,11 @@ var (
 
 	usage:
 
-	go get -u github.com/beego/beego/v2/client/orm
-	go get -u github.com/go-sql-driver/mysql
-	go get -u github.com/mattn/go-sqlite3
-	go get -u github.com/lib/pq
-	go get -u github.com/pingcap/tidb
+	go Get -u github.com/beego/beego/v2/client/orm
+	go Get -u github.com/go-sql-driver/mysql
+	go Get -u github.com/mattn/go-sqlite3
+	go Get -u github.com/lib/pq
+	go Get -u github.com/pingcap/tidb
 
 	#### MySQL
 	mysql -u root -e 'create database orm_test;'
@@ -532,7 +538,6 @@ var (
 	go test -v github.com/beego/beego/v2/pgk/orm
 
 	`
-)
 
 func init() {
 	// Debug, _ = StrTo(DBARGS.Debug).Bool()
@@ -544,14 +549,12 @@ func init() {
 	}
 
 	err := RegisterDataBase("default", DBARGS.Driver, DBARGS.Source, MaxIdleConnections(20))
-
 	if err != nil {
-		panic(fmt.Sprintf("can not register database: %v", err))
+		panic(fmt.Sprintf("can not Register database: %v", err))
 	}
 
-	alias := getDbAlias("default")
-	if alias.Driver == DRMySQL {
-		alias.Engine = "INNODB"
+	alias := getDB("default")
+	if alias.driver == DRMySQL {
+		alias.engine = "INNODB"
 	}
-
 }

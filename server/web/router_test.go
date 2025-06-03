@@ -19,11 +19,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/beego/beego/v2/core/logs"
-
 	"github.com/beego/beego/v2/server/web/context"
 )
 
@@ -35,8 +36,7 @@ func (ptc *PrefixTestController) PrefixList() {
 	ptc.Ctx.Output.Body([]byte("i am list in prefix test"))
 }
 
-type TestControllerWithInterface struct {
-}
+type TestControllerWithInterface struct{}
 
 func (m TestControllerWithInterface) Ping() {
 	fmt.Println("pong")
@@ -44,6 +44,14 @@ func (m TestControllerWithInterface) Ping() {
 
 func (m *TestControllerWithInterface) PingPointer() {
 	fmt.Println("pong pointer")
+}
+
+type TestDefineController struct {
+	Controller
+}
+
+func (tc *TestDefineController) List() {
+	tc.Ctx.Output.Body([]byte("i am list"))
 }
 
 type TestController struct {
@@ -137,10 +145,12 @@ func TestUrlFor(t *testing.T) {
 func TestUrlFor3(t *testing.T) {
 	handler := NewControllerRegister()
 	handler.AddAuto(&TestController{})
-	if a := handler.URLFor("TestController.Myext"); a != "/test/myext" && a != "/Test/Myext" {
+	a := handler.URLFor("TestController.Myext")
+	if a != "/test/myext" && a != "/Test/Myext" {
 		t.Errorf("TestController.Myext must equal to /test/myext, but get " + a)
 	}
-	if a := handler.URLFor("TestController.GetURL"); a != "/test/geturl" && a != "/Test/GetURL" {
+	a = handler.URLFor("TestController.GetURL")
+	if a != "/test/geturl" && a != "/Test/GetURL" {
 		t.Errorf("TestController.GetURL must equal to /test/geturl, but get " + a)
 	}
 }
@@ -247,7 +257,6 @@ func TestAutoExtFunc(t *testing.T) {
 }
 
 func TestEscape(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "/search/%E4%BD%A0%E5%A5%BD", nil)
 	w := httptest.NewRecorder()
 
@@ -264,7 +273,6 @@ func TestEscape(t *testing.T) {
 }
 
 func TestRouteOk(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "/person/anderson/thomas?learn=kungfu", nil)
 	w := httptest.NewRecorder()
 
@@ -278,7 +286,6 @@ func TestRouteOk(t *testing.T) {
 }
 
 func TestManyRoute(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "/beego32-12.html", nil)
 	w := httptest.NewRecorder()
 
@@ -295,7 +302,6 @@ func TestManyRoute(t *testing.T) {
 
 // Test for issue #1669
 func TestEmptyResponse(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "/beego-empty.html", nil)
 	w := httptest.NewRecorder()
 
@@ -358,7 +364,22 @@ func TestAutoPrefix(t *testing.T) {
 	}
 }
 
-func TestRouterGet(t *testing.T) {
+func TestAutoPrefixWithDefinedControllerSuffix(t *testing.T) {
+	r, _ := http.NewRequest("GET", "/admin/test/list", nil)
+	w := httptest.NewRecorder()
+
+	config := BeeApp.Cfg
+	config.ControllerSuffix = "DefineController"
+
+	handler := NewControllerRegisterWithCfg(config)
+	handler.AddAutoPrefix("/admin", &TestDefineController{})
+	handler.ServeHTTP(w, r)
+	if w.Body.String() != "i am list" {
+		t.Errorf("TestAutoPrefixWithDefinedControllerSuffix can't run")
+	}
+}
+
+func TestCtrlGet(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/user", nil)
 	w := httptest.NewRecorder()
 
@@ -368,11 +389,11 @@ func TestRouterGet(t *testing.T) {
 	})
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != "Get userlist" {
-		t.Errorf("TestRouterGet can't run")
+		t.Errorf("TestCtrlGet can't run")
 	}
 }
 
-func TestRouterPost(t *testing.T) {
+func TestCtrlPost(t *testing.T) {
 	r, _ := http.NewRequest("POST", "/user/123", nil)
 	w := httptest.NewRecorder()
 
@@ -382,7 +403,7 @@ func TestRouterPost(t *testing.T) {
 	})
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != "123" {
-		t.Errorf("TestRouterPost can't run")
+		t.Errorf("TestCtrlPost can't run")
 	}
 }
 
@@ -520,7 +541,7 @@ func TestParamResetFilter(t *testing.T) {
 	mux.ServeHTTP(rw, r)
 
 	// The two functions, `beegoResetParams` and `beegoHandleResetParams` add
-	// a response header of `Splat`.  The expectation here is that that Header
+	// a response header of `Splat`.  The expectation here is that Header
 	// value should match what the _request's_ router set, not the filter's.
 
 	headers := rw.Result().Header
@@ -838,177 +859,176 @@ func TestRouterSessionSet(t *testing.T) {
 	if w.Header().Get("Set-Cookie") == "" {
 		t.Errorf("TestRotuerSessionSet failed")
 	}
-
 }
 
-func TestRouterRouterGet(t *testing.T) {
+func TestRouterCtrlGet(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterGet("/user", ExampleController.Ping)
+	handler.CtrlGet("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterGet can't run")
+		t.Errorf("TestRouterCtrlGet can't run")
 	}
 }
 
-func TestRouterRouterPost(t *testing.T) {
+func TestRouterCtrlPost(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPost, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPost("/user", ExampleController.Ping)
+	handler.CtrlPost("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterPost can't run")
+		t.Errorf("TestRouterCtrlPost can't run")
 	}
 }
 
-func TestRouterRouterHead(t *testing.T) {
+func TestRouterCtrlHead(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodHead, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterHead("/user", ExampleController.Ping)
+	handler.CtrlHead("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterHead can't run")
+		t.Errorf("TestRouterCtrlHead can't run")
 	}
 }
 
-func TestRouterRouterPut(t *testing.T) {
+func TestRouterCtrlPut(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPut, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPut("/user", ExampleController.Ping)
+	handler.CtrlPut("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterPut can't run")
+		t.Errorf("TestRouterCtrlPut can't run")
 	}
 }
 
-func TestRouterRouterPatch(t *testing.T) {
+func TestRouterCtrlPatch(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPatch, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPatch("/user", ExampleController.Ping)
+	handler.CtrlPatch("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterPatch can't run")
+		t.Errorf("TestRouterCtrlPatch can't run")
 	}
 }
 
-func TestRouterRouterDelete(t *testing.T) {
+func TestRouterCtrlDelete(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodDelete, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterDelete("/user", ExampleController.Ping)
+	handler.CtrlDelete("/user", ExampleController.Ping)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != exampleBody {
-		t.Errorf("TestRouterRouterDelete can't run")
+		t.Errorf("TestRouterCtrlDelete can't run")
 	}
 }
 
-func TestRouterRouterAny(t *testing.T) {
+func TestRouterCtrlAny(t *testing.T) {
 	handler := NewControllerRegister()
-	handler.RouterAny("/user", ExampleController.Ping)
+	handler.CtrlAny("/user", ExampleController.Ping)
 
 	for method := range HTTPMETHOD {
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest(method, "/user", nil)
 		handler.ServeHTTP(w, r)
 		if w.Body.String() != exampleBody {
-			t.Errorf("TestRouterRouterAny can't run, get the response is " + w.Body.String())
+			t.Errorf("TestRouterCtrlAny can't run, get the response is " + w.Body.String())
 		}
 	}
 }
 
-func TestRouterRouterGetPointerMethod(t *testing.T) {
+func TestRouterCtrlGetPointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterGet("/user", (*ExampleController).PingPointer)
+	handler.CtrlGet("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterGetPointerMethod can't run")
+		t.Errorf("TestRouterCtrlGetPointerMethod can't run")
 	}
 }
 
-func TestRouterRouterPostPointerMethod(t *testing.T) {
+func TestRouterCtrlPostPointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPost, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPost("/user", (*ExampleController).PingPointer)
+	handler.CtrlPost("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterPostPointerMethod can't run")
+		t.Errorf("TestRouterCtrlPostPointerMethod can't run")
 	}
 }
 
-func TestRouterRouterHeadPointerMethod(t *testing.T) {
+func TestRouterCtrlHeadPointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodHead, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterHead("/user", (*ExampleController).PingPointer)
+	handler.CtrlHead("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterHeadPointerMethod can't run")
+		t.Errorf("TestRouterCtrlHeadPointerMethod can't run")
 	}
 }
 
-func TestRouterRouterPutPointerMethod(t *testing.T) {
+func TestRouterCtrlPutPointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPut, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPut("/user", (*ExampleController).PingPointer)
+	handler.CtrlPut("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterPutPointerMethod can't run")
+		t.Errorf("TestRouterCtrlPutPointerMethod can't run")
 	}
 }
 
-func TestRouterRouterPatchPointerMethod(t *testing.T) {
+func TestRouterCtrlPatchPointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPatch, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterPatch("/user", (*ExampleController).PingPointer)
+	handler.CtrlPatch("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterPatchPointerMethod can't run")
+		t.Errorf("TestRouterCtrlPatchPointerMethod can't run")
 	}
 }
 
-func TestRouterRouterDeletePointerMethod(t *testing.T) {
+func TestRouterCtrlDeletePointerMethod(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodDelete, "/user", nil)
 	w := httptest.NewRecorder()
 
 	handler := NewControllerRegister()
-	handler.RouterDelete("/user", (*ExampleController).PingPointer)
+	handler.CtrlDelete("/user", (*ExampleController).PingPointer)
 	handler.ServeHTTP(w, r)
 	if w.Body.String() != examplePointerBody {
-		t.Errorf("TestRouterRouterDeletePointerMethod can't run")
+		t.Errorf("TestRouterCtrlDeletePointerMethod can't run")
 	}
 }
 
-func TestRouterRouterAnyPointerMethod(t *testing.T) {
+func TestRouterCtrlAnyPointerMethod(t *testing.T) {
 	handler := NewControllerRegister()
-	handler.RouterAny("/user", (*ExampleController).PingPointer)
+	handler.CtrlAny("/user", (*ExampleController).PingPointer)
 
 	for method := range HTTPMETHOD {
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest(method, "/user", nil)
 		handler.ServeHTTP(w, r)
 		if w.Body.String() != examplePointerBody {
-			t.Errorf("TestRouterRouterAnyPointerMethod can't run, get the response is " + w.Body.String())
+			t.Errorf("TestRouterCtrlAnyPointerMethod can't run, get the response is " + w.Body.String())
 		}
 	}
 }
@@ -1018,7 +1038,7 @@ func TestRouterAddRouterMethodPanicInvalidMethod(t *testing.T) {
 	message := "not support http method: " + strings.ToUpper(method)
 	defer func() {
 		err := recover()
-		if err != nil { //产生了panic异常
+		if err != nil { // 产生了panic异常
 			errStr, ok := err.(string)
 			if ok && errStr == message {
 				return
@@ -1036,7 +1056,7 @@ func TestRouterAddRouterMethodPanicNotAMethod(t *testing.T) {
 	message := "not a method"
 	defer func() {
 		err := recover()
-		if err != nil { //产生了panic异常
+		if err != nil { // 产生了panic异常
 			errStr, ok := err.(string)
 			if ok && errStr == message {
 				return
@@ -1054,7 +1074,7 @@ func TestRouterAddRouterMethodPanicNotPublicMethod(t *testing.T) {
 	message := "ping is not a public method"
 	defer func() {
 		err := recover()
-		if err != nil { //产生了panic异常
+		if err != nil { // 产生了panic异常
 			errStr, ok := err.(string)
 			if ok && errStr == message {
 				return
@@ -1072,7 +1092,7 @@ func TestRouterAddRouterMethodPanicNotImplementInterface(t *testing.T) {
 	message := "web.TestControllerWithInterface is not implemented ControllerInterface"
 	defer func() {
 		err := recover()
-		if err != nil { //产生了panic异常
+		if err != nil { // 产生了panic异常
 			errStr, ok := err.(string)
 			if ok && errStr == message {
 				return
@@ -1090,7 +1110,7 @@ func TestRouterAddRouterPointerMethodPanicNotImplementInterface(t *testing.T) {
 	message := "web.TestControllerWithInterface is not implemented ControllerInterface"
 	defer func() {
 		err := recover()
-		if err != nil { //产生了panic异常
+		if err != nil { // 产生了panic异常
 			errStr, ok := err.(string)
 			if ok && errStr == message {
 				return
@@ -1101,4 +1121,33 @@ func TestRouterAddRouterPointerMethodPanicNotImplementInterface(t *testing.T) {
 
 	handler := NewControllerRegister()
 	handler.AddRouterMethod(method, "/user", (*TestControllerWithInterface).PingPointer)
+}
+
+func TestGetAllControllerInfo(t *testing.T) {
+	handler := NewControllerRegister()
+	handler.Add("/level1", &TestController{}, WithRouterMethods(&TestController{}, "get:Get"))
+	handler.Add("/level1/level2", &TestController{}, WithRouterMethods(&TestController{}, "get:Get"))
+	handler.Add("/:name1", &TestController{}, WithRouterMethods(&TestController{}, "post:Post"))
+
+	var actualPatterns []string
+	var actualMethods []string
+	for _, controllerInfo := range handler.GetAllControllerInfo() {
+		actualPatterns = append(actualPatterns, controllerInfo.GetPattern())
+		for _, httpMethod := range controllerInfo.GetMethod() {
+			actualMethods = append(actualMethods, httpMethod)
+		}
+	}
+	sort.Strings(actualPatterns)
+	expectedPatterns := []string{"/level1", "/level1/level2", "/:name1"}
+	sort.Strings(expectedPatterns)
+	if !reflect.DeepEqual(actualPatterns, expectedPatterns) {
+		t.Errorf("ControllerInfo.GetMethod expected %#v, but %#v got", expectedPatterns, actualPatterns)
+	}
+
+	sort.Strings(actualMethods)
+	expectedMethods := []string{"Get", "Get", "Post"}
+	sort.Strings(expectedMethods)
+	if !reflect.DeepEqual(actualMethods, expectedMethods) {
+		t.Errorf("ControllerInfo.GetMethod expected %#v, but %#v got", expectedMethods, actualMethods)
+	}
 }

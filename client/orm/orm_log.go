@@ -19,46 +19,48 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"time"
+
+	"github.com/beego/beego/v2/client/orm/internal/logs"
 )
 
-// Log implement the log.Logger
-type Log struct {
-	*log.Logger
+type Log = logs.Log
+
+// NewLog Set io.Writer to create a Logger.
+func NewLog(out io.Writer) *logs.Log {
+	return logs.NewLog(out)
 }
 
-// costomer log func
+// LogFunc costomer log func
 var LogFunc func(query map[string]interface{})
 
-// NewLog set io.Writer to create a Logger.
-func NewLog(out io.Writer) *Log {
-	d := new(Log)
-	d.Logger = log.New(out, "[ORM]", log.LstdFlags)
-	return d
-}
-
-func debugLogQueies(alias *alias, operaton, query string, t time.Time, err error, args ...interface{}) {
-	var logMap = make(map[string]interface{})
+func debugLogQueies(alias *DB, operation, query string, t time.Time, err error, args ...interface{}) {
+	logMap := make(map[string]interface{})
 	sub := time.Since(t) / 1e5
 	elsp := float64(int(sub)) / 10.0
 	logMap["cost_time"] = elsp
-	flag := "  OK"
+	flag := "OK"
 	if err != nil {
 		flag = "FAIL"
 	}
+
 	logMap["flag"] = flag
-	con := fmt.Sprintf(" -[Queries/%s] - [%s / %11s / %7.1fms] - [%s]", alias.Name, flag, operaton, elsp, query)
+	con := fmt.Sprintf(" -[Queries/%s] - [  %s / %11s / %7.1fms] - [%s]", alias.name, flag, operation, elsp, query)
+	logMap["alias_name"] = alias.name
+	logMap["operation"] = operation
+	logMap["query"] = query
 	cons := make([]string, 0, len(args))
 	for _, arg := range args {
 		cons = append(cons, fmt.Sprintf("%v", arg))
 	}
 	if len(cons) > 0 {
 		con += fmt.Sprintf(" - `%s`", strings.Join(cons, "`, `"))
+		logMap["cons"] = cons
 	}
 	if err != nil {
 		con += " - " + err.Error()
+		logMap["err"] = err
 	}
 	logMap["sql"] = fmt.Sprintf("%s-`%s`", query, strings.Join(cons, "`, `"))
 	if LogFunc != nil {
@@ -70,7 +72,7 @@ func debugLogQueies(alias *alias, operaton, query string, t time.Time, err error
 // statement query logger struct.
 // if dev mode, use stmtQueryLog, or use stmtQuerier.
 type stmtQueryLog struct {
-	alias *alias
+	alias *DB
 	query string
 	stmt  stmtQuerier
 }
@@ -94,6 +96,7 @@ func (d *stmtQueryLog) ExecContext(ctx context.Context, args ...interface{}) (sq
 	debugLogQueies(d.alias, "st.Exec", d.query, a, err, args...)
 	return res, err
 }
+
 func (d *stmtQueryLog) Query(args ...interface{}) (*sql.Rows, error) {
 	return d.QueryContext(context.Background(), args...)
 }
@@ -116,7 +119,7 @@ func (d *stmtQueryLog) QueryRowContext(ctx context.Context, args ...interface{})
 	return res
 }
 
-func newStmtQueryLog(alias *alias, stmt stmtQuerier, query string) stmtQuerier {
+func newStmtQueryLog(alias *DB, stmt stmtQuerier, query string) stmtQuerier {
 	d := new(stmtQueryLog)
 	d.stmt = stmt
 	d.alias = alias
@@ -127,15 +130,17 @@ func newStmtQueryLog(alias *alias, stmt stmtQuerier, query string) stmtQuerier {
 // database query logger struct.
 // if dev mode, use dbQueryLog, or use dbQuerier.
 type dbQueryLog struct {
-	alias *alias
+	alias *DB
 	db    dbQuerier
 	tx    txer
 	txe   txEnder
 }
 
-var _ dbQuerier = new(dbQueryLog)
-var _ txer = new(dbQueryLog)
-var _ txEnder = new(dbQueryLog)
+var (
+	_ dbQuerier = new(dbQueryLog)
+	_ txer      = new(dbQueryLog)
+	_ txEnder   = new(dbQueryLog)
+)
 
 func (d *dbQueryLog) Prepare(query string) (*sql.Stmt, error) {
 	return d.PrepareContext(context.Background(), query)
@@ -206,11 +211,18 @@ func (d *dbQueryLog) Rollback() error {
 	return err
 }
 
+func (d *dbQueryLog) RollbackUnlessCommit() error {
+	a := time.Now()
+	err := d.db.(txEnder).RollbackUnlessCommit()
+	debugLogQueies(d.alias, "tx.RollbackUnlessCommit", "ROLLBACK UNLESS COMMIT", a, err)
+	return err
+}
+
 func (d *dbQueryLog) SetDB(db dbQuerier) {
 	d.db = db
 }
 
-func newDbQueryLog(alias *alias, db dbQuerier) dbQuerier {
+func newDbQueryLog(alias *DB, db dbQuerier) dbQuerier {
 	d := new(dbQueryLog)
 	d.alias = alias
 	d.db = db

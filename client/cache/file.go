@@ -17,13 +17,12 @@ package cache
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -67,7 +66,6 @@ func NewFileCache() Cache {
 // StartAndGC starts gc for file cache.
 // config must be in the format {CachePath:"/cache","FileSuffix":".bin","DirectoryLevel":"2","EmbedExpiry":"0"}
 func (fc *FileCache) StartAndGC(config string) error {
-
 	cfg := make(map[string]string)
 	err := json.Unmarshal([]byte(config), &cfg)
 	if err != nil {
@@ -123,31 +121,32 @@ func (fc *FileCache) Init() error {
 	return nil
 }
 
-// getCachedFilename returns an md5 encoded file name.
+// getCacheFileName returns a md5 encoded file name.
 func (fc *FileCache) getCacheFileName(key string) (string, error) {
-	m := md5.New()
+	m := sha256.New()
 	_, _ = io.WriteString(m, key)
-	keyMd5 := hex.EncodeToString(m.Sum(nil))
+	keySha256 := hex.EncodeToString(m.Sum(nil))
 	cachePath := fc.CachePath
 	switch fc.DirectoryLevel {
 	case 2:
-		cachePath = filepath.Join(cachePath, keyMd5[0:2], keyMd5[2:4])
+		cachePath = filepath.Join(cachePath, keySha256[0:2], keySha256[2:4])
 	case 1:
-		cachePath = filepath.Join(cachePath, keyMd5[0:2])
+		cachePath = filepath.Join(cachePath, keySha256[0:2])
 	}
 	ok, err := exists(cachePath)
 	if err != nil {
 		return "", err
 	}
 	if !ok {
-		err  = os.MkdirAll(cachePath, os.ModePerm)
+		fmt.Printf("cachePath: %s\n", cachePath)
+		err = os.MkdirAll(cachePath, os.ModePerm)
 		if err != nil {
 			return "", berror.Wrapf(err, CreateFileCacheDirFailed,
 				"could not create the directory: %s", cachePath)
 		}
 	}
 
-	return filepath.Join(cachePath, fmt.Sprintf("%s%s", keyMd5, fc.FileSuffix)), nil
+	return filepath.Join(cachePath, fmt.Sprintf("%s%s", keySha256, fc.FileSuffix)), nil
 }
 
 // Get value from file cache.
@@ -214,6 +213,7 @@ func (fc *FileCache) Put(ctx context.Context, key string, val interface{}, timeo
 	}
 
 	fn, err := fc.getCacheFileName(key)
+
 	if err != nil {
 		return err
 	}
@@ -296,11 +296,11 @@ func exists(path string) (bool, error) {
 // FileGetContents Reads bytes from a file.
 // if non-existent, create this file.
 func FileGetContents(filename string) ([]byte, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, berror.Wrapf(err, ReadFileCacheContentFailed,
-			"could not read the data from the file: %s, " +
-			"please confirm that file exist and Beego has the permission to read the content.", filename)
+			"could not read the data from the file: %s, "+
+				"please confirm that file exist and Beego has the permission to read the content.", filename)
 	}
 	return data, nil
 }
@@ -308,7 +308,7 @@ func FileGetContents(filename string) ([]byte, error) {
 // FilePutContents puts bytes into a file.
 // if non-existent, create this file.
 func FilePutContents(filename string, content []byte) error {
-	return ioutil.WriteFile(filename, content, os.ModePerm)
+	return os.WriteFile(filename, content, os.ModePerm)
 }
 
 // GobEncode Gob encodes a file cache item.

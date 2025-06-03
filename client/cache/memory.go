@@ -25,10 +25,8 @@ import (
 	"github.com/beego/beego/v2/core/berror"
 )
 
-var (
-	// Timer for how often to recycle the expired cache items in memory (in seconds)
-	DefaultEvery = 60 // 1 minute
-)
+// DefaultEvery sets a timer for how often to recycle the expired cache items in memory (in seconds)
+var DefaultEvery = 60 // 1 minute
 
 // MemoryItem stores memory cache item.
 type MemoryItem struct {
@@ -65,8 +63,7 @@ func NewMemoryCache() Cache {
 func (bc *MemoryCache) Get(ctx context.Context, key string) (interface{}, error) {
 	bc.RLock()
 	defer bc.RUnlock()
-	if itm, ok :=
-		bc.items[key]; ok {
+	if itm, ok := bc.items[key]; ok {
 		if itm.isExpire() {
 			return nil, ErrKeyExpired
 		}

@@ -19,17 +19,17 @@ import (
 )
 
 var InvalidUrl = berror.DefineCode(4001001, moduleName, "InvalidUrl", `
-You pass a invalid url to httplib module. Please check your url, be careful about special character. 
+You pass an invalid url to httplib module. Please check your url, be careful about special character. 
 `)
 
 var InvalidUrlProtocolVersion = berror.DefineCode(4001002, moduleName, "InvalidUrlProtocolVersion", `
-You pass a invalid protocol version. In practice, we use HTTP/1.0, HTTP/1.1, HTTP/1.2
+You pass an invalid protocol version. In practice, we use HTTP/1.0, HTTP/1.1, HTTP/1.2
 But something like HTTP/3.2 is valid for client, and the major version is 3, minor version is 2.
 but you must confirm that server support those abnormal protocol version.
 `)
 
 var UnsupportedBodyType = berror.DefineCode(4001003, moduleName, "UnsupportedBodyType", `
-You use a invalid data as request body.
+You use an invalid data as request body.
 For now, we only support type string and byte[].
 `)
 
@@ -49,6 +49,10 @@ var InvalidJSONBody = berror.DefineCode(4001006, moduleName, "InvalidJSONBody", 
 You pass invalid data which could not be converted to JSON documents. In general, if you pass structure, it works well.
 Sometimes you got JSON document and you want to make it as request body. So you call JSONBody.
 If you do this, you got this code. Instead, you should call Header to set Content-type and call Body to set body data.
+`)
+
+var InvalidURLOrMethod = berror.DefineCode(4001007, moduleName, "InvalidURLOrMethod", `
+You pass invalid url or method to httplib module. Please check the url and method, be careful about special characters.
 `)
 
 // start with 5 --------------------------------------------------------------------------
@@ -123,4 +127,12 @@ Beego trying to unmarshal response's body to structure but failed.
 Make sure that:
 1. You pass valid structure pointer to the function;
 2. The body is valid YAML document
+`)
+
+var UnmarshalResponseToObjectFailed = berror.DefineCode(5001011, moduleName,
+	"UnmarshalResponseToObjectFailed", `
+Beego trying to unmarshal response's body to structure but failed.
+There are several cases that cause this error:
+1. You pass valid structure pointer to the function;
+2. The body is valid json, Yaml or XML document
 `)

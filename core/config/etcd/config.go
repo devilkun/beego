@@ -17,13 +17,13 @@ package etcd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/coreos/etcd/clientv3"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/mitchellh/mapstructure"
-	"github.com/pkg/errors"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
 	"github.com/beego/beego/v2/core/config"
@@ -46,7 +46,7 @@ func newEtcdConfiger(client *clientv3.Client, prefix string) *EtcdConfiger {
 	return res
 }
 
-// reader is an general implementation that read config from etcd.
+// reader is a general implementation that read config from etcd.
 func (e *EtcdConfiger) reader(ctx context.Context, key string) (string, error) {
 	resp, err := get(e.client, e.prefix+key)
 	if err != nil {
@@ -82,7 +82,7 @@ func (e *EtcdConfiger) GetSection(section string) (map[string]string, error) {
 	resp, err = e.client.Get(context.TODO(), e.prefix+section, clientv3.WithPrefix())
 
 	if err != nil {
-		return nil, errors.WithMessage(err, "GetSection failed")
+		return nil, fmt.Errorf("GetSection failed: %w", err)
 	}
 	res := make(map[string]string, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
@@ -101,7 +101,7 @@ func (e *EtcdConfiger) SaveConfigFile(filename string) error {
 func (e *EtcdConfiger) Unmarshaler(prefix string, obj interface{}, opt ...config.DecodeOption) error {
 	res, err := e.GetSection(prefix)
 	if err != nil {
-		return errors.WithMessage(err, fmt.Sprintf("could not read config with prefix: %s", prefix))
+		return fmt.Errorf("could not read config with prefix: %s: %w", prefix, err)
 	}
 
 	prefixLen := len(e.prefix + prefix)
@@ -119,7 +119,6 @@ func (e *EtcdConfiger) Sub(key string) (config.Configer, error) {
 
 // TODO remove this before release v2.0.0
 func (e *EtcdConfiger) OnChange(key string, fn func(value string)) {
-
 	buildOptsFunc := func() []clientv3.OpOption {
 		return []clientv3.OpOption{}
 	}
@@ -144,11 +143,9 @@ func (e *EtcdConfiger) OnChange(key string, fn func(value string)) {
 			rch = e.client.Watch(context.Background(), e.prefix+key, buildOptsFunc()...)
 		}
 	}()
-
 }
 
-type EtcdConfigerProvider struct {
-}
+type EtcdConfigerProvider struct{}
 
 // Parse = ParseData([]byte(key))
 // key must be json
@@ -161,7 +158,7 @@ func (provider *EtcdConfigerProvider) ParseData(data []byte) (config.Configer, e
 	cfg := &clientv3.Config{}
 	err := json.Unmarshal(data, cfg)
 	if err != nil {
-		return nil, errors.WithMessage(err, "parse data to etcd config failed, please check your input")
+		return nil, fmt.Errorf("parse data to etcd config failed, please check your input: %w", err)
 	}
 
 	cfg.DialOptions = []grpc.DialOption{
@@ -171,7 +168,7 @@ func (provider *EtcdConfigerProvider) ParseData(data []byte) (config.Configer, e
 	}
 	client, err := clientv3.New(*cfg)
 	if err != nil {
-		return nil, errors.WithMessage(err, "create etcd client failed")
+		return nil, fmt.Errorf("create etcd client failed: %w", err)
 	}
 
 	return newEtcdConfiger(client, ""), nil
@@ -185,11 +182,11 @@ func get(client *clientv3.Client, key string) (*clientv3.GetResponse, error) {
 	resp, err = client.Get(context.Background(), key)
 
 	if err != nil {
-		return nil, errors.WithMessage(err, fmt.Sprintf("read config from etcd with key %s failed", key))
+		return nil, fmt.Errorf("read config from etcd with key %s failed: %w", key, err)
 	}
 	return resp, err
 }
 
 func init() {
-	config.Register("json", &EtcdConfigerProvider{})
+	config.Register("etcd", &EtcdConfigerProvider{})
 }
